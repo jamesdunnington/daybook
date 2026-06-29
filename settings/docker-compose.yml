@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTION A — standalone (recommended)
+#   Copy this file to ~/daybook/docker-compose.yml on your VPS.
+#   Run from ~/daybook/:  docker compose up -d
+#
+# OPTION B — merge into ~/n8n/docker-compose.yml
+#   Copy the three services below into the services: section.
+#   Copy the two volumes below into the volumes: section.
+#   postiz-network is already declared there so nothing else changes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  daybook-postgres:
+    image: postgres:16-alpine
+    container_name: daybook-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DAYBOOK_DB_USER:-daybook}
+      POSTGRES_PASSWORD: ${DAYBOOK_DB_PASSWORD}
+      POSTGRES_DB: ${DAYBOOK_DB_NAME:-daybook}
+    volumes:
+      - daybook_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DAYBOOK_DB_USER:-daybook} -d ${DAYBOOK_DB_NAME:-daybook}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - postiz-network
+
+  daybook-app:
+    image: ghcr.io/jamesdunnington/daybook:latest
+    container_name: daybook-app
+    restart: unless-stopped
+    depends_on:
+      daybook-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DAYBOOK_DB_USER:-daybook}:${DAYBOOK_DB_PASSWORD}@daybook-postgres:5432/${DAYBOOK_DB_NAME:-daybook}
+      BETTER_AUTH_SECRET: ${DAYBOOK_AUTH_SECRET}
+      BETTER_AUTH_URL: https://daybook.thecontentwarrior.work
+      NEXT_PUBLIC_APP_URL: https://daybook.thecontentwarrior.work
+      OPENROUTER_API_KEY: ${DAYBOOK_OPENROUTER_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${DAYBOOK_TELEGRAM_TOKEN:-}
+      SMTP_HOST: ${DAYBOOK_SMTP_HOST:-}
+      SMTP_PORT: ${DAYBOOK_SMTP_PORT:-587}
+      SMTP_USER: ${DAYBOOK_SMTP_USER:-}
+      SMTP_PASS: ${DAYBOOK_SMTP_PASS:-}
+      SMTP_FROM: ${DAYBOOK_SMTP_FROM:-noreply@daybook.local}
+      UPLOAD_DIR: /app/uploads
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      - daybook_uploads:/app/uploads
+    networks:
+      - postiz-network
+
+  daybook-mcp:
+    image: ghcr.io/jamesdunnington/daybook-mcp:latest
+    container_name: daybook-mcp
+    restart: unless-stopped
+    depends_on:
+      - daybook-app
+    environment:
+      DAYBOOK_API_URL: http://daybook-app:3000
+      DAYBOOK_API_KEY: ${DAYBOOK_MCP_KEY:-}
+      PORT: 3001
+    networks:
+      - postiz-network
+
+volumes:
+  daybook_postgres_data:
+  daybook_uploads:
+
+networks:
+  postiz-network:
+    external: true    # already created by the n8n stack

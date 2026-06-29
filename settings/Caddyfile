@@ -1,0 +1,18 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Append these two blocks to the bottom of ~/n8n/Caddyfile
+# then reload: docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+# ─────────────────────────────────────────────────────────────────────────────
+
+daybook.thecontentwarrior.work {
+    reverse_proxy daybook-app:3000
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    }
+}
+
+mcpdaybook.thecontentwarrior.work {
+    reverse_proxy daybook-mcp:3001
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    }
+}

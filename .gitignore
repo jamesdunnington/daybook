@@ -34,8 +34,9 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
-# allow the example file
+# allow example/template files
 !.env.example
+!settings/.env
 
 # User uploads (use Docker volumes in production)
 /uploads/
