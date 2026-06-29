@@ -30,8 +30,20 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — never commit secrets
+.env
+.env.local
+.env.*.local
+# allow the example file
+!.env.example
+
+# User uploads (use Docker volumes in production)
+/uploads/
+
+# IDE
+.vscode/
+.idea/
+.claude/
 
 # vercel
 .vercel

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Type-check & Build
+    runs-on: ubuntu-latest
+
+    env:
+      # Dummy values so Next.js can compile without a real DB
+      DATABASE_URL: postgresql://daybook:daybook@localhost:5432/daybook
+      BETTER_AUTH_SECRET: ci_dummy_secret_minimum_32_chars_long
+      BETTER_AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      UPLOAD_DIR: /tmp/uploads
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build

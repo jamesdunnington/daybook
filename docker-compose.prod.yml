@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: daybook-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-daybook}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-daybook}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-daybook} -d ${POSTGRES_DB:-daybook}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daybook-net
+
+  app:
+    image: ghcr.io/${GITHUB_OWNER}/daybook:latest
+    container_name: daybook-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-daybook}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-daybook}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@daybook.local}
+      UPLOAD_DIR: /app/uploads
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - "${PORT:-3000}:3000"
+    networks:
+      - daybook-net
+
+  mcp:
+    image: ghcr.io/${GITHUB_OWNER}/daybook-mcp:latest
+    container_name: daybook-mcp
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      DAYBOOK_API_URL: http://app:3000
+      DAYBOOK_API_KEY: ${MCP_API_KEY:-}
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    networks:
+      - daybook-net
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  daybook-net:
+    driver: bridge

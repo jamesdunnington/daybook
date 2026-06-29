@@ -1,7 +1,25 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
+import withSerwistInit from '@serwist/next';
+
+const withSerwist = withSerwistInit({
+  swSrc: 'src/app/sw.ts',
+  swDest: 'public/sw.js',
+  disable: process.env.NODE_ENV === 'development',
+  reloadOnOnline: true,
+  cacheOnNavigation: true,
+});
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: 'standalone',
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
+  },
+  // Allow serving uploaded images from the local filesystem
+  images: {
+    unoptimized: true,
+  },
 };
 
-export default nextConfig;
+export default withSerwist(nextConfig);
