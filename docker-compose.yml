@@ -4,13 +4,13 @@ services:
     container_name: daybook-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-daybook}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:-daybook}
+      POSTGRES_USER: ${DAYBOOK_DB_USER:-daybook}
+      POSTGRES_PASSWORD: ${DAYBOOK_DB_PASSWORD:?DAYBOOK_DB_PASSWORD is required}
+      POSTGRES_DB: ${DAYBOOK_DB_NAME:-daybook}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-daybook} -d ${POSTGRES_DB:-daybook}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DAYBOOK_DB_USER:-daybook} -d ${DAYBOOK_DB_NAME:-daybook}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,7 +27,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-daybook}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-daybook}
+      DATABASE_URL: postgresql://${DAYBOOK_DB_USER:-daybook}:${DAYBOOK_DB_PASSWORD}@postgres:5432/${DAYBOOK_DB_NAME:-daybook}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
