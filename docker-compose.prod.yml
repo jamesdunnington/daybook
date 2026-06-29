@@ -18,7 +18,7 @@ services:
       - daybook-net
 
   app:
-    image: ghcr.io/${GITHUB_OWNER}/daybook:latest
+    image: ghcr.io/${GITHUB_OWNER:?GITHUB_OWNER is required}/daybook:latest
     container_name: daybook-app
     restart: unless-stopped
     depends_on:
@@ -27,8 +27,8 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-daybook}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-daybook}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?BETTER_AUTH_URL is required}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL is required}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -41,8 +41,7 @@ services:
       PORT: 3000
     volumes:
       - uploads_data:/app/uploads
-    ports:
-      - "${PORT:-3000}:3000"
+    # No ports exposed to host — Caddy proxies internally
     networks:
       - daybook-net
 
@@ -56,14 +55,32 @@ services:
       DAYBOOK_API_URL: http://app:3000
       DAYBOOK_API_KEY: ${MCP_API_KEY:-}
       PORT: 3001
-    ports:
-      - "3001:3001"
+    # No ports exposed to host — Caddy proxies internally
     networks:
       - daybook-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: daybook-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - daybook-net
+    depends_on:
+      - app
 
 volumes:
   postgres_data:
   uploads_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   daybook-net:

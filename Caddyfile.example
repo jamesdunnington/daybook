@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Daybook — Caddy reverse proxy config
+# Copy this file to ~/daybook/Caddyfile on your VPS and fill in your domain.
+# Caddy automatically gets TLS certificates from Let's Encrypt.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Option A: two subdomains (recommended) ───────────────────────────────────
+# Main app at daybook.example.com
+# MCP server at mcp.daybook.example.com  →  Claude Desktop URL: https://mcp.daybook.example.com/mcp
+
+daybook.example.com {
+    reverse_proxy app:3000
+}
+
+mcp.daybook.example.com {
+    reverse_proxy mcp:3001
+}
+
+
+# ── Option B: single domain, path-based MCP ──────────────────────────────────
+# Use this if you only have one subdomain/domain.
+# Claude Desktop URL would be: https://daybook.example.com/mcp
+
+# daybook.example.com {
+#     handle /mcp* {
+#         reverse_proxy mcp:3001
+#     }
+#     reverse_proxy app:3000
+# }
+
+
+# ── Option C: plain IP address (no TLS, LAN / testing only) ──────────────────
+# Replace with your server's IP.
+
+# :80 {
+#     reverse_proxy app:3000
+# }
