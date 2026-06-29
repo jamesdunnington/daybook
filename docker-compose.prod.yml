@@ -41,7 +41,8 @@ services:
       PORT: 3000
     volumes:
       - uploads_data:/app/uploads
-    # No ports exposed to host — Caddy proxies internally
+    ports:
+      - "127.0.0.1:3010:3000"
     networks:
       - daybook-net
 
@@ -55,32 +56,14 @@ services:
       DAYBOOK_API_URL: http://app:3000
       DAYBOOK_API_KEY: ${MCP_API_KEY:-}
       PORT: 3001
-    # No ports exposed to host — Caddy proxies internally
-    networks:
-      - daybook-net
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: daybook-caddy
-    restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - "127.0.0.1:3011:3001"
     networks:
       - daybook-net
-    depends_on:
-      - app
 
 volumes:
   postgres_data:
   uploads_data:
-  caddy_data:
-  caddy_config:
 
 networks:
   daybook-net:
