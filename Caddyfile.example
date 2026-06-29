@@ -1,18 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Append these blocks to your existing ~/n8n/Caddyfile on the VPS.
-# The app and mcp containers bind to 127.0.0.1:3010 / 127.0.0.1:3011,
-# so Caddy reaches them via the host loopback interface.
+# Append these two blocks to ~/n8n/Caddyfile
+# Caddy reaches the containers via postiz-network by container name.
 # ─────────────────────────────────────────────────────────────────────────────
 
 daybook.thecontentwarrior.work {
-    reverse_proxy host.docker.internal:3010
+    reverse_proxy daybook-app:3000
     header {
         Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
     }
 }
 
 mcpdaybook.thecontentwarrior.work {
-    reverse_proxy host.docker.internal:3011
+    reverse_proxy daybook-mcp:3001
     header {
         Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
     }

@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - daybook-net
+      - daybook-net         # internal only — not exposed to Caddy
 
   app:
     image: ghcr.io/${GITHUB_OWNER:?GITHUB_OWNER is required}/daybook:latest
@@ -41,10 +41,9 @@ services:
       PORT: 3000
     volumes:
       - uploads_data:/app/uploads
-    ports:
-      - "127.0.0.1:3010:3000"
     networks:
-      - daybook-net
+      - daybook-net         # reaches postgres
+      - postiz-network      # Caddy reaches this container
 
   mcp:
     image: ghcr.io/${GITHUB_OWNER}/daybook-mcp:latest
@@ -53,13 +52,11 @@ services:
     depends_on:
       - app
     environment:
-      DAYBOOK_API_URL: http://app:3000
+      DAYBOOK_API_URL: http://daybook-app:3000
       DAYBOOK_API_KEY: ${MCP_API_KEY:-}
       PORT: 3001
-    ports:
-      - "127.0.0.1:3011:3001"
     networks:
-      - daybook-net
+      - postiz-network      # reaches daybook-app + Caddy reaches this container
 
 volumes:
   postgres_data:
@@ -68,3 +65,5 @@ volumes:
 networks:
   daybook-net:
     driver: bridge
+  postiz-network:
+    external: true          # already created by the n8n stack
