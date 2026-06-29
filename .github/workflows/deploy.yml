@@ -18,7 +18,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
-            cd ~/daybook
-            docker compose pull
-            docker compose up -d --no-build
+            cd ~/n8n
+            docker compose pull daybook-app daybook-mcp
+            docker compose up -d
             docker image prune -f
