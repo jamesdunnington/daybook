@@ -16,7 +16,7 @@ import {
   addMonths,
   subMonths,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin, Pencil } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -285,6 +285,26 @@ function EventDetailDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
+  const [startAt, setStartAt] = useState('');
+  const [endAt, setEndAt] = useState('');
+  const [allDay, setAllDay] = useState(false);
+  const [color, setColor] = useState('#6366f1');
+
+  const startEdit = () => {
+    if (!event) return;
+    setTitle(event.title);
+    setDescription(event.description ?? '');
+    setLocation(event.location ?? '');
+    setStartAt(format(new Date(event.startAt), "yyyy-MM-dd'T'HH:mm"));
+    setEndAt(format(new Date(event.endAt), "yyyy-MM-dd'T'HH:mm"));
+    setAllDay(event.allDay);
+    setColor(event.color);
+    setEditing(true);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -297,7 +317,39 @@ function EventDetailDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
       onClose();
+      setEditing(false);
       toast.success('Event deleted');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      if (!event) return;
+      const res = await fetch(`/api/calendar/${event.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description || null,
+          location: location || null,
+          startAt: new Date(allDay ? startAt.slice(0, 10) + 'T00:00' : startAt).toISOString(),
+          endAt: new Date(allDay ? endAt.slice(0, 10) + 'T23:59' : endAt).toISOString(),
+          allDay,
+          color,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? 'Failed to update event');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
+      setEditing(false);
+      onClose();
+      toast.success('Event updated');
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -308,67 +360,178 @@ function EventDetailDialog({
   const end = new Date(event.endAt);
 
   return (
-    <Dialog open={!!event} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <div className="flex items-start gap-3">
-            <div
-              className="h-3 w-3 rounded-full mt-1.5 shrink-0"
-              style={{ backgroundColor: event.color }}
-            />
-            <DialogTitle className="leading-snug">{event.title}</DialogTitle>
-          </div>
-        </DialogHeader>
+    <Dialog open={!!event} onOpenChange={(v) => { if (!v) { setEditing(false); onClose(); } }}>
+      <DialogContent className="sm:max-w-md">
+        {editing ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Edit Event</DialogTitle>
+            </DialogHeader>
+            <form
+              onSubmit={(e) => { e.preventDefault(); if (title.trim()) editMutation.mutate(); }}
+              className="space-y-4"
+            >
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="edit-title">Title *</label>
+                <Input
+                  id="edit-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Event title"
+                  required
+                />
+              </div>
 
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="h-4 w-4 shrink-0" />
-            <span>
-              {event.allDay ? (
-                format(start, 'MMMM d, yyyy')
-              ) : (
-                <>
-                  {format(start, 'MMM d, yyyy h:mm a')}
-                  {' – '}
-                  {isSameDay(start, end)
-                    ? format(end, 'h:mm a')
-                    : format(end, 'MMM d, yyyy h:mm a')}
-                </>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="edit-all-day"
+                  checked={allDay}
+                  onCheckedChange={(v) => setAllDay(Boolean(v))}
+                />
+                <label htmlFor="edit-all-day" className="text-sm cursor-pointer">All day</label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor="edit-start">Start</label>
+                  <Input
+                    id="edit-start"
+                    type={allDay ? 'date' : 'datetime-local'}
+                    value={allDay ? startAt.slice(0, 10) : startAt}
+                    onChange={(e) => setStartAt(allDay ? e.target.value + 'T00:00' : e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor="edit-end">End</label>
+                  <Input
+                    id="edit-end"
+                    type={allDay ? 'date' : 'datetime-local'}
+                    value={allDay ? endAt.slice(0, 10) : endAt}
+                    onChange={(e) => setEndAt(allDay ? e.target.value + 'T23:59' : e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="edit-location">Location</label>
+                <Input
+                  id="edit-location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Optional location"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Color</label>
+                <div className="flex gap-2">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      className="h-7 w-7 rounded-full border-2 transition-transform hover:scale-110"
+                      style={{
+                        backgroundColor: c.value,
+                        borderColor: color === c.value ? 'white' : 'transparent',
+                        outline: color === c.value ? `2px solid ${c.value}` : 'none',
+                      }}
+                      onClick={() => setColor(c.value)}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="edit-desc">Description</label>
+                <Textarea
+                  id="edit-desc"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional description…"
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={editMutation.isPending}>
+                  {editMutation.isPending ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <div className="flex items-start gap-3">
+                <div
+                  className="h-3 w-3 rounded-full mt-1.5 shrink-0"
+                  style={{ backgroundColor: event.color }}
+                />
+                <DialogTitle className="leading-snug">{event.title}</DialogTitle>
+              </div>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4 shrink-0" />
+                <span>
+                  {event.allDay ? (
+                    format(start, 'MMMM d, yyyy')
+                  ) : (
+                    <>
+                      {format(start, 'MMM d, yyyy h:mm a')}
+                      {' – '}
+                      {isSameDay(start, end)
+                        ? format(end, 'h:mm a')
+                        : format(end, 'MMM d, yyyy h:mm a')}
+                    </>
+                  )}
+                </span>
+              </div>
+
+              {event.location && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MapPin className="h-4 w-4 shrink-0" />
+                  <span>{event.location}</span>
+                </div>
               )}
-            </span>
-          </div>
 
-          {event.location && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <MapPin className="h-4 w-4 shrink-0" />
-              <span>{event.location}</span>
+              {event.description && (
+                <p className="text-sm text-foreground whitespace-pre-wrap">
+                  {event.description}
+                </p>
+              )}
+
+              {event.rrule && (
+                <Badge variant="secondary" className="text-xs">
+                  Recurring
+                </Badge>
+              )}
             </div>
-          )}
 
-          {event.description && (
-            <p className="text-sm text-foreground whitespace-pre-wrap">
-              {event.description}
-            </p>
-          )}
-
-          {event.rrule && (
-            <Badge variant="secondary" className="text-xs">
-              Recurring
-            </Badge>
-          )}
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => deleteMutation.mutate(event.id)}
-            disabled={deleteMutation.isPending}
-          >
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-          </Button>
-        </div>
+            <div className="flex justify-between pt-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => deleteMutation.mutate(event.id)}
+                disabled={deleteMutation.isPending}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+              </Button>
+              <Button size="sm" onClick={startEdit}>
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit
+              </Button>
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
