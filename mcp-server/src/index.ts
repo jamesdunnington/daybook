@@ -185,6 +185,10 @@ class DaybookAuthProvider {
     };
   }
 
+  async exchangeRefreshToken(): Promise<never> {
+    throw new Error('Refresh tokens are not supported');
+  }
+
   async verifyAccessToken(token: string): Promise<{ token: string; clientId: string; scopes: string[]; expiresAt: number; resource?: URL }> {
     const data = this.tokens.get(token);
     if (!data || data.expiresAt < Date.now()) throw new Error('Invalid or expired token');
