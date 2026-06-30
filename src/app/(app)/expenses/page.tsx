@@ -250,7 +250,7 @@ function AddTransactionDialog({ categories, onSuccess }: AddTransactionDialogPro
               </SelectTrigger>
               <SelectContent>
                 {filteredCategories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
+                  <SelectItem key={cat.id} value={cat.id} label={cat.name}>
                     <span
                       className="inline-block size-2.5 rounded-full mr-1.5"
                       style={{ backgroundColor: cat.color ?? '#10b981' }}
@@ -441,7 +441,7 @@ function EditTransactionDialog({ transaction, categories, onSuccess }: EditTrans
               </SelectTrigger>
               <SelectContent>
                 {filteredCategories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
+                  <SelectItem key={cat.id} value={cat.id} label={cat.name}>
                     <span
                       className="inline-block size-2.5 rounded-full mr-1.5"
                       style={{ backgroundColor: cat.color ?? '#10b981' }}
@@ -712,7 +712,7 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
             {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
+              <SelectItem key={cat.id} value={cat.id} label={cat.name}>
                 {cat.name}
               </SelectItem>
             ))}

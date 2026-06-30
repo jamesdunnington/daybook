@@ -288,7 +288,7 @@ function AddTodoDialog({ categories }: { categories: TodoCategory[] }) {
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
+                    <SelectItem key={cat.id} value={cat.id} label={cat.name}>
                       {cat.name}
                     </SelectItem>
                   ))}
