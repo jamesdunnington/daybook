@@ -246,7 +246,9 @@ function AddTransactionDialog({ categories, onSuccess }: AddTransactionDialogPro
             <Label htmlFor="tx-category">Category</Label>
             <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
               <SelectTrigger id="tx-category" className="w-full">
-                <SelectValue placeholder="Select category..." />
+                <SelectValue placeholder="Select category...">
+                  {(v: string | null) => filteredCategories.find(c => c.id === v)?.name ?? null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {filteredCategories.map((cat) => (
@@ -437,7 +439,9 @@ function EditTransactionDialog({ transaction, categories, onSuccess }: EditTrans
             <Label htmlFor="edit-tx-category">Category</Label>
             <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
               <SelectTrigger id="edit-tx-category" className="w-full">
-                <SelectValue placeholder="Select category..." />
+                <SelectValue placeholder="Select category...">
+                  {(v: string | null) => filteredCategories.find(c => c.id === v)?.name ?? null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {filteredCategories.map((cat) => (
@@ -707,7 +711,9 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
 
         <Select value={filterCategoryId} onValueChange={(v) => { setFilterCategoryId((v ?? '') === 'all' ? '' : (v ?? '')); setPage(1); }}>
           <SelectTrigger className="w-40">
-            <SelectValue placeholder="All categories" />
+            <SelectValue placeholder="All categories">
+              {(v: string | null) => !v ? 'All categories' : categories.find(c => c.id === v)?.name ?? 'All categories'}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>

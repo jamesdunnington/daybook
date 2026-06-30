@@ -283,7 +283,9 @@ function AddTodoDialog({ categories }: { categories: TodoCategory[] }) {
               <Label>Category</Label>
               <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
                 <SelectTrigger>
-                  <SelectValue placeholder="None" />
+                  <SelectValue placeholder="None">
+                    {(v: string | null) => !v || v === 'none' ? 'None' : categories.find(c => c.id === v)?.name ?? 'None'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
