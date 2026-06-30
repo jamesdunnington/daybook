@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { expenseTransactions } from '@/lib/db/schema';
 import { requireSession } from '@/lib/auth/server';
 import { validateApiKey } from '@/lib/auth/api-key';
-import { and, eq, gte, lte, desc, count } from 'drizzle-orm';
+import { and, eq, gte, lte, desc, count, sql } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
   const hdrs = await headers();
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   const where = and(...conditions);
 
-  const [rows, [totalRow]] = await Promise.all([
+  const [rows, [totalRow], [sumRow]] = await Promise.all([
     db
       .select()
       .from(expenseTransactions)
@@ -46,6 +46,10 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .offset(offset),
     db.select({ total: count() }).from(expenseTransactions).where(where),
+    db.select({
+      totalIncome: sql<string>`coalesce(sum(case when type = 'income' then amount else 0 end), 0)`,
+      totalExpense: sql<string>`coalesce(sum(case when type = 'expense' then amount else 0 end), 0)`,
+    }).from(expenseTransactions).where(where),
   ]);
 
   return NextResponse.json({
@@ -53,6 +57,8 @@ export async function GET(req: NextRequest) {
     total: totalRow?.total ?? 0,
     page,
     limit,
+    totalIncome: parseFloat(sumRow?.totalIncome ?? '0'),
+    totalExpense: parseFloat(sumRow?.totalExpense ?? '0'),
   });
 }
 

@@ -68,6 +68,8 @@ interface TransactionsResponse {
   total: number;
   page: number;
   limit: number;
+  totalIncome: number;
+  totalExpense: number;
 }
 
 interface MonthlyData {
@@ -756,6 +758,49 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
           />
         </div>
       </div>
+
+      {/* Filtered totals summary */}
+      {!isLoading && !isError && data && (
+        <div className="flex flex-wrap items-center gap-3 px-1 text-sm">
+          {(filterType === '' || filterType === 'income') && (
+            <span className="flex items-center gap-1.5">
+              <TrendingUpIcon className="size-3.5 text-emerald-500" />
+              <span className="text-muted-foreground">
+                {filterType === 'income' ? 'Total:' : 'Income:'}
+              </span>
+              <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                +{formatCurrency(data.totalIncome)}
+              </span>
+            </span>
+          )}
+          {filterType === '' && <span className="text-muted-foreground/40">·</span>}
+          {(filterType === '' || filterType === 'expense') && (
+            <span className="flex items-center gap-1.5">
+              <TrendingDownIcon className="size-3.5 text-red-500" />
+              <span className="text-muted-foreground">
+                {filterType === 'expense' ? 'Total:' : 'Expenses:'}
+              </span>
+              <span className="font-semibold text-red-600 dark:text-red-400">
+                -{formatCurrency(data.totalExpense)}
+              </span>
+            </span>
+          )}
+          {filterType === '' && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Net:</span>
+                <span className={`font-semibold ${data.totalIncome - data.totalExpense >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {data.totalIncome - data.totalExpense >= 0 ? '+' : ''}{formatCurrency(data.totalIncome - data.totalExpense)}
+                </span>
+              </span>
+            </>
+          )}
+          <span className="text-muted-foreground/60 ml-auto text-xs">
+            {data.total} transaction{data.total !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
 
       {/* Transaction list */}
       {isLoading && (
