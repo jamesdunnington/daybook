@@ -514,7 +514,9 @@ app.get('/health', (_req, res) => {
 });
 
 // MCP endpoint — protected by bearer token
-app.all('/mcp', requireBearerAuth({ verifier: authProvider }), async (req, res) => {
+// resourceMetadataUrl tells Claude where to find OAuth discovery when it gets a 401
+const resourceMetadataUrl = `${MCP_SERVER_URL}/.well-known/oauth-protected-resource/mcp`;
+app.all('/mcp', requireBearerAuth({ verifier: authProvider, resourceMetadataUrl }), async (req, res) => {
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on('close', () => transport.close());
   await mcpServer.connect(transport);
