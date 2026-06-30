@@ -119,9 +119,10 @@ const PIE_COLORS = [
 interface AddTransactionDialogProps {
   categories: ExpenseCategory[];
   onSuccess: () => void;
+  className?: string;
 }
 
-function AddTransactionDialog({ categories, onSuccess }: AddTransactionDialogProps) {
+function AddTransactionDialog({ categories, onSuccess, className }: AddTransactionDialogProps) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [amount, setAmount] = useState('');
@@ -177,7 +178,7 @@ function AddTransactionDialog({ categories, onSuccess }: AddTransactionDialogPro
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
+      <DialogTrigger render={<Button size="sm" className={className} />}>
         <PlusIcon />
         Add Transaction
       </DialogTrigger>
@@ -699,62 +700,70 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
   return (
     <div className="flex flex-col gap-4">
       {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={filterType} onValueChange={(v) => { setFilterType((v ?? '') === 'all' ? '' : (v ?? '')); setPage(1); }}>
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="All types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="income">Income</SelectItem>
-            <SelectItem value="expense">Expense</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        {/* Type + Category */}
+        <div className="flex gap-2">
+          <Select value={filterType} onValueChange={(v) => { setFilterType((v ?? '') === 'all' ? '' : (v ?? '')); setPage(1); }}>
+            <SelectTrigger className="flex-1 sm:w-32 sm:flex-none">
+              <SelectValue placeholder="All types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All types</SelectItem>
+              <SelectItem value="income">Income</SelectItem>
+              <SelectItem value="expense">Expense</SelectItem>
+            </SelectContent>
+          </Select>
 
-        <Select value={filterCategoryId} onValueChange={(v) => { setFilterCategoryId((v ?? '') === 'all' ? '' : (v ?? '')); setPage(1); }}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="All categories">
-              {(v: string | null) => !v ? 'All categories' : categories.find(c => c.id === v)?.name ?? 'All categories'}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id} label={cat.name}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-1.5">
-          <Label className="text-xs text-muted-foreground">From</Label>
-          <Input
-            type="date"
-            className="h-8 w-36 text-sm"
-            value={filterFrom}
-            onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
-          />
+          <Select value={filterCategoryId} onValueChange={(v) => { setFilterCategoryId((v ?? '') === 'all' ? '' : (v ?? '')); setPage(1); }}>
+            <SelectTrigger className="flex-1 sm:w-40 sm:flex-none">
+              <SelectValue placeholder="All categories">
+                {(v: string | null) => !v ? 'All categories' : categories.find(c => c.id === v)?.name ?? 'All categories'}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id} label={cat.name}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <Label className="text-xs text-muted-foreground">To</Label>
-          <Input
-            type="date"
-            className="h-8 w-36 text-sm"
-            value={filterTo}
-            onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
-          />
+        {/* Date range */}
+        <div className="flex gap-2">
+          <div className="flex flex-1 items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground shrink-0">From</Label>
+            <Input
+              type="date"
+              className="h-8 flex-1 sm:w-36 sm:flex-none text-sm"
+              value={filterFrom}
+              onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
+            />
+          </div>
+
+          <div className="flex flex-1 items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground shrink-0">To</Label>
+            <Input
+              type="date"
+              className="h-8 flex-1 sm:w-36 sm:flex-none text-sm"
+              value={filterTo}
+              onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
+            />
+          </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExport}>
+        {/* Actions */}
+        <div className="flex gap-2 sm:ml-auto">
+          <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleExport}>
             <DownloadIcon />
             Export CSV
           </Button>
           <AddTransactionDialog
             categories={categories}
             onSuccess={() => qc.invalidateQueries({ queryKey: ['expenses'] })}
+            className="flex-1 sm:flex-none"
           />
         </div>
       </div>

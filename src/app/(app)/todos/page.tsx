@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Trash2, Calendar, Tag } from 'lucide-react';
+import { Plus, Trash2, Calendar, Tag, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -338,6 +338,155 @@ function AddTodoDialog({ categories }: { categories: TodoCategory[] }) {
   );
 }
 
+// ─── Edit Todo Dialog ─────────────────────────────────────────────────────────
+
+function EditTodoDialog({ todo, categories }: { todo: Todo; categories: TodoCategory[] }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(todo.title);
+  const [description, setDescription] = useState(todo.description ?? '');
+  const [priority, setPriority] = useState(todo.priority);
+  const [categoryId, setCategoryId] = useState(todo.categoryId ?? 'none');
+  const [dueDate, setDueDate] = useState(
+    todo.dueDate ? new Date(todo.dueDate).toISOString().slice(0, 16) : ''
+  );
+
+  const handleOpenChange = (o: boolean) => {
+    if (o) {
+      setTitle(todo.title);
+      setDescription(todo.description ?? '');
+      setPriority(todo.priority);
+      setCategoryId(todo.categoryId ?? 'none');
+      setDueDate(todo.dueDate ? new Date(todo.dueDate).toISOString().slice(0, 16) : '');
+    }
+    setOpen(o);
+  };
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/todos/${todo.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description || null,
+          priority,
+          categoryId: categoryId !== 'none' ? categoryId : null,
+          dueDate: dueDate || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? 'Failed to update todo');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['todos'] });
+      setOpen(false);
+      toast.success('Todo updated');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    mutation.mutate();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger render={<Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground transition-colors" />}>
+        <Pencil className="h-3.5 w-3.5" />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Todo</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-todo-title">Title *</Label>
+            <Input
+              id="edit-todo-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="What needs to be done?"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Select value={priority} onValueChange={(v) => setPriority(v ?? 'medium')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? 'none')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="None">
+                    {(v: string | null) => !v || v === 'none' ? 'None' : categories.find(c => c.id === v)?.name ?? 'None'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id} label={cat.name}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-todo-due">Due Date</Label>
+            <Input
+              id="edit-todo-due"
+              type="datetime-local"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-todo-desc">Description</Label>
+            <Textarea
+              id="edit-todo-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional notes…"
+              rows={3}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Todo Item ────────────────────────────────────────────────────────────────
 
 function TodoItem({
@@ -432,15 +581,18 @@ function TodoItem({
         </div>
       </div>
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-        onClick={() => deleteMutation.mutate()}
-        disabled={deleteMutation.isPending}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <EditTodoDialog todo={todo} categories={categories} />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive transition-colors"
+          onClick={() => deleteMutation.mutate()}
+          disabled={deleteMutation.isPending}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }
