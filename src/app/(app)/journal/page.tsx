@@ -417,6 +417,7 @@ function NewEntryDialog({ open, onClose, defaultDate, onCreated }: NewEntryDialo
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              capture="environment"
               multiple
               className="hidden"
               onChange={handleFileChange}
@@ -701,6 +702,7 @@ function EntryDetailSheet({
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    capture="environment"
                     multiple
                     className="hidden"
                     onChange={handleFileChange}
