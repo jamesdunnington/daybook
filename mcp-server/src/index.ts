@@ -497,6 +497,130 @@ mcpServer.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: update_transaction
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'update_transaction',
+  'Update an existing financial transaction by ID.',
+  {
+    id: z.string().describe('The transaction ID to update'),
+    type: z.enum(['income', 'expense']).optional().describe("Transaction type: 'income' or 'expense'"),
+    amount: z.number().positive().optional().describe('New amount as a positive number'),
+    description: z.string().optional().describe('New description'),
+    date: z.string().optional().describe('New date (YYYY-MM-DD)'),
+    categoryId: z.string().optional().describe('New expense category ID'),
+    notes: z.string().optional().describe('New notes'),
+    merchant: z.string().optional().describe('New merchant or payee name'),
+  },
+  async ({ id, type, amount, description, date, categoryId, notes, merchant }) => {
+    const body: Record<string, unknown> = {};
+    if (type !== undefined) body.type = type;
+    if (amount !== undefined) body.amount = amount;
+    if (description !== undefined) body.description = description;
+    if (date !== undefined) body.date = date;
+    if (categoryId !== undefined) body.categoryId = categoryId;
+    if (notes !== undefined) body.notes = notes;
+    if (merchant !== undefined) body.merchant = merchant;
+    const data = await daybookFetch(`/api/expenses/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_expense_categories
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'list_expense_categories',
+  'List all expense and income categories.',
+  {},
+  async () => {
+    const data = await daybookFetch('/api/expenses/categories');
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: create_expense_category
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'create_expense_category',
+  'Create a new expense or income category.',
+  {
+    name: z.string().describe('Category name'),
+    type: z.enum(['expense', 'income']).describe("Category type: 'expense' or 'income'"),
+    color: z.string().optional().describe("Optional hex color, e.g. '#6366f1'"),
+  },
+  async ({ name, type, color }) => {
+    const data = await daybookFetch('/api/expenses/categories', {
+      method: 'POST',
+      body: JSON.stringify({ name, type, color }),
+    });
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: delete_expense_category
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'delete_expense_category',
+  'Delete an expense/income category by its ID.',
+  { id: z.string().describe('The category ID to delete') },
+  async ({ id }) => {
+    const data = await daybookFetch(`/api/expenses/categories/${id}`, { method: 'DELETE' });
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_todo_categories
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'list_todo_categories',
+  'List all todo categories.',
+  {},
+  async () => {
+    const data = await daybookFetch('/api/todos/categories');
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: create_todo_category
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'create_todo_category',
+  'Create a new todo category.',
+  {
+    name: z.string().describe('Category name'),
+    color: z.string().optional().describe("Optional hex color, e.g. '#6366f1'"),
+  },
+  async ({ name, color }) => {
+    const data = await daybookFetch('/api/todos/categories', {
+      method: 'POST',
+      body: JSON.stringify({ name, color }),
+    });
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: delete_todo_category
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'delete_todo_category',
+  'Delete a todo category by its ID.',
+  { id: z.string().describe('The category ID to delete') },
+  async ({ id }) => {
+    const data = await daybookFetch(`/api/todos/categories/${id}`, { method: 'DELETE' });
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Express app with OAuth + MCP endpoint
 // ---------------------------------------------------------------------------
 const authProvider = new DaybookAuthProvider();

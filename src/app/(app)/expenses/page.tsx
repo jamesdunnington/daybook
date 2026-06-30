@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { PlusIcon, Trash2Icon, DownloadIcon, TrendingUpIcon, TrendingDownIcon, BarChart2Icon, TagIcon } from 'lucide-react';
+import { PlusIcon, Trash2Icon, DownloadIcon, TrendingUpIcon, TrendingDownIcon, BarChart2Icon, TagIcon, PencilIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -289,6 +289,197 @@ function AddTransactionDialog({ categories, onSuccess }: AddTransactionDialogPro
           <DialogFooter>
             <Button type="submit" disabled={loading}>
               {loading ? 'Adding...' : 'Add Transaction'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Edit Transaction Dialog ──────────────────────────────────────────────────
+
+interface EditTransactionDialogProps {
+  transaction: ExpenseTransaction;
+  categories: ExpenseCategory[];
+  onSuccess: () => void;
+}
+
+function EditTransactionDialog({ transaction, categories, onSuccess }: EditTransactionDialogProps) {
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState<'income' | 'expense'>(transaction.type as 'income' | 'expense');
+  const [amount, setAmount] = useState(transaction.amount);
+  const [description, setDescription] = useState(transaction.description);
+  const [date, setDate] = useState(transaction.date.split('T')[0]);
+  const [categoryId, setCategoryId] = useState(transaction.categoryId ?? '');
+  const [merchant, setMerchant] = useState(transaction.merchant ?? '');
+  const [notes, setNotes] = useState(transaction.notes ?? '');
+  const [loading, setLoading] = useState(false);
+
+  const handleOpenChange = (o: boolean) => {
+    if (o) {
+      setType(transaction.type as 'income' | 'expense');
+      setAmount(transaction.amount);
+      setDescription(transaction.description);
+      setDate(transaction.date.split('T')[0]);
+      setCategoryId(transaction.categoryId ?? '');
+      setMerchant(transaction.merchant ?? '');
+      setNotes(transaction.notes ?? '');
+    }
+    setOpen(o);
+  };
+
+  const filteredCategories = categories.filter((c) => c.type === type);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!amount || !description || !date) {
+      toast.error('Amount, description, and date are required');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/expenses/${transaction.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
+          amount,
+          description,
+          date,
+          categoryId: categoryId || null,
+          merchant: merchant || null,
+          notes: notes || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? 'Failed to update transaction');
+      }
+      toast.success('Transaction updated');
+      setOpen(false);
+      onSuccess();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update transaction');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" />}>
+        <PencilIcon className="size-3.5" />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Transaction</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={type === 'expense' ? 'default' : 'outline'}
+              size="sm"
+              className="flex-1"
+              onClick={() => { setType('expense'); setCategoryId(''); }}
+            >
+              Expense
+            </Button>
+            <Button
+              type="button"
+              variant={type === 'income' ? 'default' : 'outline'}
+              size="sm"
+              className="flex-1"
+              onClick={() => { setType('income'); setCategoryId(''); }}
+            >
+              Income
+            </Button>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-tx-amount">Amount</Label>
+            <Input
+              id="edit-tx-amount"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-tx-description">Description</Label>
+            <Input
+              id="edit-tx-description"
+              placeholder="Transaction description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-tx-date">Date</Label>
+            <Input
+              id="edit-tx-date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-tx-category">Category</Label>
+            <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
+              <SelectTrigger id="edit-tx-category" className="w-full">
+                <SelectValue placeholder="Select category..." />
+              </SelectTrigger>
+              <SelectContent>
+                {filteredCategories.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    <span
+                      className="inline-block size-2.5 rounded-full mr-1.5"
+                      style={{ backgroundColor: cat.color ?? '#10b981' }}
+                    />
+                    {cat.name}
+                  </SelectItem>
+                ))}
+                {filteredCategories.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No categories yet</div>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-tx-merchant">Merchant (optional)</Label>
+            <Input
+              id="edit-tx-merchant"
+              placeholder="Merchant name"
+              value={merchant}
+              onChange={(e) => setMerchant(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-tx-notes">Notes (optional)</Label>
+            <Textarea
+              id="edit-tx-notes"
+              placeholder="Additional notes..."
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </form>
@@ -587,7 +778,7 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
                     <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Description</th>
                     <th className="px-4 py-2.5 text-left font-medium text-muted-foreground hidden md:table-cell">Category</th>
                     <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Amount</th>
-                    <th className="px-4 py-2.5 w-12" />
+                    <th className="px-4 py-2.5 w-20" />
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -626,15 +817,22 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
                           {isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
                         </td>
                         <td className="px-4 py-3">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => deleteMutation.mutate(tx.id)}
-                            disabled={deleteMutation.isPending}
-                          >
-                            <Trash2Icon className="size-3.5" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <EditTransactionDialog
+                              transaction={tx}
+                              categories={categories}
+                              onSuccess={() => qc.invalidateQueries({ queryKey: ['expenses'] })}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => deleteMutation.mutate(tx.id)}
+                              disabled={deleteMutation.isPending}
+                            >
+                              <Trash2Icon className="size-3.5" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
