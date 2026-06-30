@@ -834,11 +834,11 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Date</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">Description</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground hidden md:table-cell">Category</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">Amount</th>
-                    <th className="px-4 py-2.5 w-20" />
+                    <th className="px-2 md:px-4 py-2.5 text-left font-medium text-muted-foreground">Date</th>
+                    <th className="px-2 md:px-4 py-2.5 text-left font-medium text-muted-foreground">Description</th>
+                    <th className="px-2 md:px-4 py-2.5 text-left font-medium text-muted-foreground hidden md:table-cell">Category</th>
+                    <th className="px-2 md:px-4 py-2.5 text-right font-medium text-muted-foreground">Amount</th>
+                    <th className="px-2 md:px-4 py-2.5 w-[72px]" />
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -847,16 +847,16 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
                     const isIncome = tx.type === 'income';
                     return (
                       <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                        <td className="px-2 md:px-4 py-3 whitespace-nowrap text-muted-foreground text-xs md:text-sm">
                           {format(new Date(tx.date), 'MMM d, yyyy')}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium leading-tight">{tx.description}</div>
+                        <td className="px-2 md:px-4 py-3 max-w-0 w-full">
+                          <div className="font-medium leading-tight truncate">{tx.description}</div>
                           {tx.merchant && (
-                            <div className="text-xs text-muted-foreground mt-0.5">{tx.merchant}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5 truncate">{tx.merchant}</div>
                           )}
                         </td>
-                        <td className="px-4 py-3 hidden md:table-cell">
+                        <td className="px-2 md:px-4 py-3 hidden md:table-cell">
                           {cat ? (
                             <Badge
                               variant="outline"
@@ -873,10 +873,10 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className={`px-4 py-3 text-right font-semibold tabular-nums ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                        <td className={`px-2 md:px-4 py-3 text-right font-semibold tabular-nums whitespace-nowrap text-xs md:text-sm ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                           {isIncome ? '+' : '-'}{formatCurrency(tx.amount)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-2 md:px-4 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <EditTransactionDialog
                               transaction={tx}
