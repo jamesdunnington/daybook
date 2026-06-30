@@ -39,6 +39,22 @@ async function daybookFetch(path: string, options?: RequestInit): Promise<unknow
 }
 
 // ---------------------------------------------------------------------------
+// Helper: wrap tool handlers so errors surface as readable MCP responses
+// ---------------------------------------------------------------------------
+type ToolContent = { type: 'text'; text: string };
+type ToolResult = { content: ToolContent[]; isError?: true };
+
+async function runTool(fn: () => Promise<unknown>): Promise<ToolResult> {
+  try {
+    const data = await fn();
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Build date helpers
 // ---------------------------------------------------------------------------
 function todayISO(): string {
@@ -214,7 +230,7 @@ mcpServer.tool(
   'get_dashboard_summary',
   'Returns a markdown summary of pending todos and upcoming calendar events for the next 14 days.',
   {},
-  async () => {
+  async () => runTool(async () => {
     const [todosData, eventsData] = await Promise.all([
       daybookFetch('/api/todos?status=pending'),
       daybookFetch(`/api/calendar?start=${todayISO()}&end=${plusDaysISO(14)}`),
@@ -257,8 +273,8 @@ mcpServer.tool(
       eventLines || '_No upcoming events_',
     ].join('\n');
 
-    return { content: [{ type: 'text', text: summary }] };
-  },
+    return summary;
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -271,14 +287,13 @@ mcpServer.tool(
     status: z.string().optional().describe("Filter by status, e.g. 'pending' or 'completed'"),
     categoryId: z.string().optional().describe('Filter by category ID'),
   },
-  async ({ status, categoryId }) => {
+  async ({ status, categoryId }) => runTool(async () => {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (categoryId) params.set('categoryId', categoryId);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const data = await daybookFetch(`/api/todos${qs}`);
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    return daybookFetch(`/api/todos${qs}`);
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -294,13 +309,12 @@ mcpServer.tool(
     dueDate: z.string().optional().describe('Due date in ISO format (YYYY-MM-DD)'),
     categoryId: z.string().optional().describe('Category ID to assign'),
   },
-  async ({ title, description, priority, dueDate, categoryId }) => {
-    const data = await daybookFetch('/api/todos', {
+  async ({ title, description, priority, dueDate, categoryId }) => runTool(() =>
+    daybookFetch('/api/todos', {
       method: 'POST',
       body: JSON.stringify({ title, description, priority, dueDate, categoryId }),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    }),
+  ),
 );
 
 // ---------------------------------------------------------------------------
@@ -310,13 +324,12 @@ mcpServer.tool(
   'complete_todo',
   'Mark a todo as completed by its ID.',
   { id: z.string().describe('The todo ID to mark as completed') },
-  async ({ id }) => {
-    const data = await daybookFetch(`/api/todos/${id}`, {
+  async ({ id }) => runTool(() =>
+    daybookFetch(`/api/todos/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ status: 'completed' }),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    }),
+  ),
 );
 
 // ---------------------------------------------------------------------------
@@ -326,10 +339,7 @@ mcpServer.tool(
   'delete_todo',
   'Delete a todo by its ID.',
   { id: z.string().describe('The todo ID to delete') },
-  async ({ id }) => {
-    const data = await daybookFetch(`/api/todos/${id}`, { method: 'DELETE' });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+  async ({ id }) => runTool(() => daybookFetch(`/api/todos/${id}`, { method: 'DELETE' })),
 );
 
 // ---------------------------------------------------------------------------
@@ -342,14 +352,13 @@ mcpServer.tool(
     start: z.string().optional().describe('Start date (YYYY-MM-DD)'),
     end: z.string().optional().describe('End date (YYYY-MM-DD)'),
   },
-  async ({ start, end }) => {
+  async ({ start, end }) => runTool(async () => {
     const params = new URLSearchParams();
     if (start) params.set('start', start);
     if (end) params.set('end', end);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const data = await daybookFetch(`/api/calendar${qs}`);
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    return daybookFetch(`/api/calendar${qs}`);
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -366,13 +375,12 @@ mcpServer.tool(
     allDay: z.boolean().optional().describe('Whether this is an all-day event'),
     rrule: z.string().optional().describe('Recurrence rule string (RFC 5545 RRULE)'),
   },
-  async ({ title, startAt, endAt, description, allDay, rrule }) => {
-    const data = await daybookFetch('/api/calendar', {
+  async ({ title, startAt, endAt, description, allDay, rrule }) => runTool(() =>
+    daybookFetch('/api/calendar', {
       method: 'POST',
       body: JSON.stringify({ title, startAt, endAt, description, allDay, rrule }),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    }),
+  ),
 );
 
 // ---------------------------------------------------------------------------
@@ -382,11 +390,10 @@ mcpServer.tool(
   'list_journal_entries',
   'List journal entries, optionally filtered by month.',
   { month: z.string().optional().describe("Month filter in YYYY-MM format, e.g. '2024-06'") },
-  async ({ month }) => {
+  async ({ month }) => runTool(async () => {
     const qs = month ? `?month=${encodeURIComponent(month)}` : '';
-    const data = await daybookFetch(`/api/journal${qs}`);
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    return daybookFetch(`/api/journal${qs}`);
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -402,13 +409,12 @@ mcpServer.tool(
     tags: z.array(z.string()).optional().describe('Array of tag strings'),
     entryDate: z.string().optional().describe('Date of the entry (YYYY-MM-DD); defaults to today'),
   },
-  async ({ content, title, mood, tags, entryDate }) => {
-    const data = await daybookFetch('/api/journal', {
+  async ({ content, title, mood, tags, entryDate }) => runTool(() =>
+    daybookFetch('/api/journal', {
       method: 'POST',
       body: JSON.stringify({ content, title, mood, tags, entryDate }),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    }),
+  ),
 );
 
 // ---------------------------------------------------------------------------
@@ -422,15 +428,14 @@ mcpServer.tool(
     from: z.string().optional().describe('Start date (YYYY-MM-DD)'),
     to: z.string().optional().describe('End date (YYYY-MM-DD)'),
   },
-  async ({ type, from, to }) => {
+  async ({ type, from, to }) => runTool(async () => {
     const params = new URLSearchParams();
     if (type) params.set('type', type);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const data = await daybookFetch(`/api/expenses${qs}`);
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    return daybookFetch(`/api/expenses${qs}`);
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -448,13 +453,12 @@ mcpServer.tool(
     notes: z.string().optional().describe('Optional free-form notes'),
     merchant: z.string().optional().describe('Optional merchant or payee name'),
   },
-  async ({ type, amount, description, date, categoryId, notes, merchant }) => {
-    const data = await daybookFetch('/api/expenses', {
+  async ({ type, amount, description, date, categoryId, notes, merchant }) => runTool(() =>
+    daybookFetch('/api/expenses', {
       method: 'POST',
       body: JSON.stringify({ type, amount, description, date, categoryId, notes, merchant }),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    }),
+  ),
 );
 
 // ---------------------------------------------------------------------------
@@ -468,12 +472,11 @@ mcpServer.tool(
     to: z.string().describe('End date (YYYY-MM-DD)'),
     groupBy: z.enum(['day', 'week', 'month', 'category']).optional().describe("Group results by 'day', 'week', 'month', or 'category'"),
   },
-  async ({ from, to, groupBy }) => {
+  async ({ from, to, groupBy }) => runTool(async () => {
     const params = new URLSearchParams({ from, to });
     if (groupBy) params.set('groupBy', groupBy);
-    const data = await daybookFetch(`/api/expenses/reports?${params.toString()}`);
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    return daybookFetch(`/api/expenses/reports?${params.toString()}`);
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -486,14 +489,13 @@ mcpServer.tool(
     from: z.string().optional().describe('Start date (YYYY-MM-DD)'),
     to: z.string().optional().describe('End date (YYYY-MM-DD)'),
   },
-  async ({ from, to }) => {
+  async ({ from, to }) => runTool(async () => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const csv = await daybookFetch(`/api/expenses/export${qs}`);
-    return { content: [{ type: 'text', text: String(csv) }] };
-  },
+    return daybookFetch(`/api/expenses/export${qs}`);
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -512,7 +514,7 @@ mcpServer.tool(
     notes: z.string().optional().describe('New notes'),
     merchant: z.string().optional().describe('New merchant or payee name'),
   },
-  async ({ id, type, amount, description, date, categoryId, notes, merchant }) => {
+  async ({ id, type, amount, description, date, categoryId, notes, merchant }) => runTool(async () => {
     const body: Record<string, unknown> = {};
     if (type !== undefined) body.type = type;
     if (amount !== undefined) body.amount = amount;
@@ -521,12 +523,8 @@ mcpServer.tool(
     if (categoryId !== undefined) body.categoryId = categoryId;
     if (notes !== undefined) body.notes = notes;
     if (merchant !== undefined) body.merchant = merchant;
-    const data = await daybookFetch(`/api/expenses/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    return daybookFetch(`/api/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -536,10 +534,7 @@ mcpServer.tool(
   'list_expense_categories',
   'List all expense and income categories.',
   {},
-  async () => {
-    const data = await daybookFetch('/api/expenses/categories');
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+  async () => runTool(() => daybookFetch('/api/expenses/categories')),
 );
 
 // ---------------------------------------------------------------------------
@@ -553,13 +548,12 @@ mcpServer.tool(
     type: z.enum(['expense', 'income']).describe("Category type: 'expense' or 'income'"),
     color: z.string().optional().describe("Optional hex color, e.g. '#6366f1'"),
   },
-  async ({ name, type, color }) => {
-    const data = await daybookFetch('/api/expenses/categories', {
+  async ({ name, type, color }) => runTool(() =>
+    daybookFetch('/api/expenses/categories', {
       method: 'POST',
       body: JSON.stringify({ name, type, color }),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    }),
+  ),
 );
 
 // ---------------------------------------------------------------------------
@@ -569,10 +563,7 @@ mcpServer.tool(
   'delete_expense_category',
   'Delete an expense/income category by its ID.',
   { id: z.string().describe('The category ID to delete') },
-  async ({ id }) => {
-    const data = await daybookFetch(`/api/expenses/categories/${id}`, { method: 'DELETE' });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+  async ({ id }) => runTool(() => daybookFetch(`/api/expenses/categories/${id}`, { method: 'DELETE' })),
 );
 
 // ---------------------------------------------------------------------------
@@ -582,10 +573,7 @@ mcpServer.tool(
   'list_todo_categories',
   'List all todo categories.',
   {},
-  async () => {
-    const data = await daybookFetch('/api/todos/categories');
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+  async () => runTool(() => daybookFetch('/api/todos/categories')),
 );
 
 // ---------------------------------------------------------------------------
@@ -598,13 +586,12 @@ mcpServer.tool(
     name: z.string().describe('Category name'),
     color: z.string().optional().describe("Optional hex color, e.g. '#6366f1'"),
   },
-  async ({ name, color }) => {
-    const data = await daybookFetch('/api/todos/categories', {
+  async ({ name, color }) => runTool(() =>
+    daybookFetch('/api/todos/categories', {
       method: 'POST',
       body: JSON.stringify({ name, color }),
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+    }),
+  ),
 );
 
 // ---------------------------------------------------------------------------
@@ -614,10 +601,7 @@ mcpServer.tool(
   'delete_todo_category',
   'Delete a todo category by its ID.',
   { id: z.string().describe('The category ID to delete') },
-  async ({ id }) => {
-    const data = await daybookFetch(`/api/todos/categories/${id}`, { method: 'DELETE' });
-    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
-  },
+  async ({ id }) => runTool(() => daybookFetch(`/api/todos/categories/${id}`, { method: 'DELETE' })),
 );
 
 // ---------------------------------------------------------------------------
