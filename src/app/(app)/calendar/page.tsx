@@ -396,13 +396,18 @@ function CalendarGrid({
 
   const days = eachDayOfInterval({ start: calStart, end: calEnd });
 
-  // Map events to dates
+  // Map events to dates, expanding multi-day events across all spanned days
   const eventsByDate = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
     for (const event of events) {
-      const key = format(new Date(event.instanceDate), 'yyyy-MM-dd');
-      if (!map[key]) map[key] = [];
-      map[key].push(event);
+      const start = new Date(event.startAt);
+      const end = new Date(event.endAt);
+      const spanDays = eachDayOfInterval({ start, end });
+      for (const day of spanDays) {
+        const key = format(day, 'yyyy-MM-dd');
+        if (!map[key]) map[key] = [];
+        map[key].push(event);
+      }
     }
     return map;
   }, [events]);
