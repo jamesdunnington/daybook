@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { PlusIcon, Trash2Icon, DownloadIcon, TrendingUpIcon, TrendingDownIcon, BarChart2Icon } from 'lucide-react';
+import { PlusIcon, Trash2Icon, DownloadIcon, TrendingUpIcon, TrendingDownIcon, BarChart2Icon, TagIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -292,6 +292,137 @@ function AddTransactionDialog({ categories, onSuccess }: AddTransactionDialogPro
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Manage Expense Categories Dialog ────────────────────────────────────────
+
+function ManageExpenseCategoriesDialog({ onSuccess }: { onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [type, setType] = useState<'expense' | 'income'>('expense');
+  const [color, setColor] = useState('#6366f1');
+  const [loading, setLoading] = useState(false);
+
+  const { data: categories = [], refetch } = useQuery<ExpenseCategory[]>({
+    queryKey: ['expense-categories'],
+    queryFn: async () => {
+      const res = await fetch('/api/expenses/categories');
+      if (!res.ok) throw new Error('Failed to fetch categories');
+      return res.json();
+    },
+  });
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/expenses/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), type, color }),
+      });
+      if (!res.ok) throw new Error('Failed to create category');
+      setName('');
+      setColor('#6366f1');
+      toast.success('Category added');
+      refetch();
+      onSuccess();
+    } catch {
+      toast.error('Failed to add category');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/expenses/categories/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete category');
+      toast.success('Category deleted');
+      refetch();
+      onSuccess();
+    } catch {
+      toast.error('Failed to delete category');
+    }
+  };
+
+  const expenseCategories = categories.filter((c) => c.type === 'expense');
+  const incomeCategories = categories.filter((c) => c.type === 'income');
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <TagIcon className="mr-2 h-4 w-4" />
+        Categories
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Manage Categories</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <form onSubmit={handleAdd} className="flex gap-2">
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="h-9 w-9 rounded border cursor-pointer shrink-0"
+            />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Category name"
+              className="flex-1"
+            />
+            <Select value={type} onValueChange={(v) => setType((v ?? 'expense') as 'expense' | 'income')}>
+              <SelectTrigger className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="expense">Expense</SelectItem>
+                <SelectItem value="income">Income</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="submit" disabled={!name.trim() || loading}>Add</Button>
+          </form>
+
+          <div className="space-y-3 max-h-64 overflow-y-auto">
+            {expenseCategories.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Expense</p>
+                {expenseCategories.map((cat) => (
+                  <div key={cat.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent">
+                    <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: cat.color ?? '#6366f1' }} />
+                    <span className="flex-1 text-sm">{cat.name}</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => handleDelete(cat.id)}>
+                      <Trash2Icon className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {incomeCategories.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Income</p>
+                {incomeCategories.map((cat) => (
+                  <div key={cat.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent">
+                    <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: cat.color ?? '#10b981' }} />
+                    <span className="flex-1 text-sm">{cat.name}</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => handleDelete(cat.id)}>
+                      <Trash2Icon className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {categories.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No categories yet</p>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -720,6 +851,7 @@ function PLReportTab() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
+  const qc = useQueryClient();
   const { data: categories = [], isLoading: catsLoading } = useQuery<ExpenseCategory[]>({
     queryKey: ['expenses', 'categories'],
     queryFn: async () => {
@@ -729,6 +861,11 @@ export default function ExpensesPage() {
     },
   });
 
+  const refetchCategories = useCallback(
+    () => qc.invalidateQueries({ queryKey: ['expenses', 'categories'] }),
+    [qc]
+  );
+
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
       <div className="flex items-center justify-between">
@@ -736,6 +873,7 @@ export default function ExpensesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Expenses</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Track income, expenses, and view P&L reports</p>
         </div>
+        <ManageExpenseCategoriesDialog onSuccess={refetchCategories} />
       </div>
 
       <Tabs defaultValue="transactions">

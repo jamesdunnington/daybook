@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Trash2, Calendar } from 'lucide-react';
+import { Plus, Trash2, Calendar, Tag } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -78,6 +78,112 @@ async function fetchCategories(): Promise<TodoCategory[]> {
   const res = await fetch('/api/todos/categories');
   if (!res.ok) throw new Error('Failed to fetch categories');
   return res.json();
+}
+
+// ─── Manage Categories Dialog ─────────────────────────────────────────────────
+
+function ManageCategoriesDialog() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [color, setColor] = useState('#6366f1');
+
+  const { data: categories = [] } = useQuery<TodoCategory[]>({
+    queryKey: ['todo-categories'],
+    queryFn: fetchCategories,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/todos/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), color }),
+      });
+      if (!res.ok) throw new Error('Failed to create category');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['todo-categories'] });
+      setName('');
+      setColor('#6366f1');
+      toast.success('Category added');
+    },
+    onError: () => toast.error('Failed to add category'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/todos/categories/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete category');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['todo-categories'] });
+      queryClient.invalidateQueries({ queryKey: ['todos'] });
+      toast.success('Category deleted');
+    },
+    onError: () => toast.error('Failed to delete category'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <Tag className="mr-2 h-4 w-4" />
+        Categories
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Manage Categories</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <form
+            onSubmit={(e) => { e.preventDefault(); if (name.trim()) addMutation.mutate(); }}
+            className="flex gap-2"
+          >
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="h-9 w-9 rounded border cursor-pointer shrink-0"
+            />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Category name"
+              className="flex-1"
+            />
+            <Button type="submit" disabled={!name.trim() || addMutation.isPending}>
+              Add
+            </Button>
+          </form>
+
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {categories.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No categories yet</p>
+            )}
+            {categories.map((cat) => (
+              <div key={cat.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent">
+                <span
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{ backgroundColor: cat.color }}
+                />
+                <span className="flex-1 text-sm">{cat.name}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-destructive hover:text-destructive"
+                  onClick={() => deleteMutation.mutate(cat.id)}
+                  disabled={deleteMutation.isPending}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ─── Add Todo Dialog ──────────────────────────────────────────────────────────
@@ -327,7 +433,7 @@ function TodoItem({
       <Button
         variant="ghost"
         size="icon"
-        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-destructive hover:text-destructive"
+        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive transition-colors"
         onClick={() => deleteMutation.mutate()}
         disabled={deleteMutation.isPending}
       >
@@ -435,7 +541,10 @@ export default function TodosPage() {
             Manage your tasks and to-dos
           </p>
         </div>
-        <AddTodoDialog categories={categories} />
+        <div className="flex gap-2">
+          <ManageCategoriesDialog />
+          <AddTodoDialog categories={categories} />
+        </div>
       </div>
 
       <Card>
