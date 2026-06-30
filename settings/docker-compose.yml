@@ -50,7 +50,7 @@ services:
       SMTP_FROM: ${DAYBOOK_SMTP_FROM:-noreply@daybook.local}
       UPLOAD_DIR: /app/uploads
       NODE_ENV: production
-      PORT: 3000
+      PORT: 3500
     volumes:
       - daybook_uploads:/app/uploads
     networks:
@@ -63,9 +63,10 @@ services:
     depends_on:
       - daybook-app
     environment:
-      DAYBOOK_API_URL: http://daybook-app:3000
+      DAYBOOK_API_URL: http://daybook-app:3500
       DAYBOOK_API_KEY: ${DAYBOOK_MCP_KEY:-}
-      PORT: 3001
+      MCP_SERVER_URL: https://mcpdaybook.thecontentwarrior.work
+      PORT: 3501
     networks:
       - postiz-network
 
@@ -73,6 +74,3 @@ volumes:
   daybook_postgres_data:
   daybook_uploads:
 
-networks:
-  postiz-network:
-    external: true    # already created by the n8n stack

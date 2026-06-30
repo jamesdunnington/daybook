@@ -1,6 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createServer } from 'http';
+import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -8,7 +11,9 @@ import { z } from 'zod';
 // ---------------------------------------------------------------------------
 const DAYBOOK_API_URL = process.env.DAYBOOK_API_URL ?? 'http://localhost:3000';
 const DAYBOOK_API_KEY = process.env.DAYBOOK_API_KEY ?? '';
-const PORT = parseInt(process.env.MCP_PORT ?? '3001', 10);
+const MCP_SERVER_URL = process.env.MCP_SERVER_URL ?? 'http://localhost:3001';
+const MCP_AUTH_TOKEN = process.env.DAYBOOK_API_KEY ?? '';
+const PORT = parseInt(process.env.PORT ?? '3001', 10);
 
 // ---------------------------------------------------------------------------
 // Helper: authenticated fetch against the Daybook REST API
@@ -26,7 +31,6 @@ async function daybookFetch(path: string, options?: RequestInit): Promise<unknow
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
   }
-  // Some endpoints (e.g. CSV export) return plain text
   const contentType = res.headers.get('content-type') ?? '';
   if (contentType.includes('application/json')) {
     return res.json();
@@ -48,17 +52,161 @@ function plusDaysISO(days: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// HTML escape helper
+// ---------------------------------------------------------------------------
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---------------------------------------------------------------------------
+// OAuth authorization form
+// ---------------------------------------------------------------------------
+function renderAuthForm(
+  client: { client_id: string; client_name?: string },
+  params: { redirectUri: string; codeChallenge: string; state?: string; scopes?: string[]; resource?: URL },
+  error?: string,
+): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daybook — Authorize</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:system-ui,sans-serif;background:#f5f5f5;margin:0;padding:40px 16px}
+    .card{background:#fff;border:1px solid #e0e0e0;border-radius:10px;max-width:400px;margin:0 auto;padding:32px}
+    h1{font-size:1.4rem;margin:0 0 4px}
+    .sub{color:#666;font-size:0.9rem;margin:0 0 20px}
+    .err{color:#c00;font-size:0.875rem;margin-bottom:14px;padding:8px 12px;background:#fff0f0;border-radius:6px}
+    label{display:block;font-size:0.875rem;font-weight:600;margin-bottom:6px}
+    input[type=password]{width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:6px;font-size:1rem}
+    input[type=password]:focus{outline:none;border-color:#333}
+    button{margin-top:14px;width:100%;padding:11px;background:#111;color:#fff;border:none;border-radius:6px;font-size:1rem;cursor:pointer}
+    button:hover{background:#333}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Daybook</h1>
+    <p class="sub"><strong>${esc(client.client_name ?? 'An application')}</strong> wants to connect to your Daybook.</p>
+    ${error ? `<div class="err">${esc(error)}</div>` : ''}
+    <form method="POST">
+      <input type="hidden" name="client_id" value="${esc(client.client_id)}" />
+      <input type="hidden" name="redirect_uri" value="${esc(params.redirectUri)}" />
+      <input type="hidden" name="response_type" value="code" />
+      <input type="hidden" name="code_challenge" value="${esc(params.codeChallenge)}" />
+      <input type="hidden" name="code_challenge_method" value="S256" />
+      ${params.state ? `<input type="hidden" name="state" value="${esc(params.state)}" />` : ''}
+      ${params.scopes?.length ? `<input type="hidden" name="scope" value="${esc(params.scopes.join(' '))}" />` : ''}
+      ${params.resource ? `<input type="hidden" name="resource" value="${esc(params.resource.toString())}" />` : ''}
+      <label for="mcp_key">Daybook API Key</label>
+      <input type="password" id="mcp_key" name="mcp_key" placeholder="Enter your DAYBOOK_MCP_KEY" autofocus />
+      <button type="submit">Authorize</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
+// ---------------------------------------------------------------------------
+// In-memory OAuth provider
+// ---------------------------------------------------------------------------
+type ClientMeta = { client_id: string; client_name?: string; redirect_uris: string[] };
+type CodeData = { client: ClientMeta; params: { redirectUri: string; codeChallenge: string; state?: string; scopes?: string[]; resource?: URL } };
+type TokenData = { clientId: string; scopes: string[]; expiresAt: number; resource?: URL };
+
+class DaybookAuthProvider {
+  clientsStore = {
+    clients: new Map<string, ClientMeta>(),
+    async getClient(clientId: string): Promise<ClientMeta | undefined> {
+      return this.clients.get(clientId);
+    },
+    async registerClient(metadata: ClientMeta): Promise<ClientMeta> {
+      this.clients.set(metadata.client_id, metadata);
+      return metadata;
+    },
+  };
+
+  private codes = new Map<string, CodeData>();
+  private tokens = new Map<string, TokenData>();
+
+  async authorize(
+    client: ClientMeta,
+    params: { redirectUri: string; codeChallenge: string; state?: string; scopes?: string[]; resource?: URL },
+    res: express.Response,
+  ): Promise<void> {
+    const req = res.req as express.Request;
+
+    if (req.method === 'POST' && typeof req.body?.mcp_key === 'string') {
+      if (!MCP_AUTH_TOKEN || req.body.mcp_key !== MCP_AUTH_TOKEN) {
+        res.send(renderAuthForm(client, params, 'Invalid API key. Please try again.'));
+        return;
+      }
+      const code = randomUUID();
+      this.codes.set(code, { client, params });
+      const redirectUrl = new URL(params.redirectUri);
+      redirectUrl.searchParams.set('code', code);
+      if (params.state) redirectUrl.searchParams.set('state', params.state);
+      res.redirect(redirectUrl.toString());
+    } else {
+      res.send(renderAuthForm(client, params));
+    }
+  }
+
+  async challengeForAuthorizationCode(_client: ClientMeta, authorizationCode: string): Promise<string> {
+    const data = this.codes.get(authorizationCode);
+    if (!data) throw new Error('Invalid authorization code');
+    return data.params.codeChallenge;
+  }
+
+  async exchangeAuthorizationCode(
+    client: ClientMeta,
+    authorizationCode: string,
+  ): Promise<{ access_token: string; token_type: string; expires_in: number; scope: string }> {
+    const data = this.codes.get(authorizationCode);
+    if (!data) throw new Error('Invalid authorization code');
+    if (data.client.client_id !== client.client_id) throw new Error('Client mismatch');
+    this.codes.delete(authorizationCode);
+
+    const token = randomUUID();
+    this.tokens.set(token, {
+      clientId: client.client_id,
+      scopes: data.params.scopes ?? [],
+      expiresAt: Date.now() + 24 * 3600 * 1000,
+      resource: data.params.resource,
+    });
+
+    return {
+      access_token: token,
+      token_type: 'bearer',
+      expires_in: 86400,
+      scope: (data.params.scopes ?? []).join(' '),
+    };
+  }
+
+  async verifyAccessToken(token: string): Promise<{ token: string; clientId: string; scopes: string[]; expiresAt: number; resource?: URL }> {
+    const data = this.tokens.get(token);
+    if (!data || data.expiresAt < Date.now()) throw new Error('Invalid or expired token');
+    return {
+      token,
+      clientId: data.clientId,
+      scopes: data.scopes,
+      expiresAt: Math.floor(data.expiresAt / 1000),
+      resource: data.resource,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // MCP server setup
 // ---------------------------------------------------------------------------
-const server = new McpServer({
-  name: 'daybook-mcp',
-  version: '1.0.0',
-});
+const mcpServer = new McpServer({ name: 'daybook-mcp', version: '1.0.0' });
 
 // ---------------------------------------------------------------------------
 // Tool: get_dashboard_summary
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'get_dashboard_summary',
   'Returns a markdown summary of pending todos and upcoming calendar events for the next 14 days.',
   {},
@@ -112,7 +260,7 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_todos
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'list_todos',
   'List todos, optionally filtered by status and/or categoryId.',
   {
@@ -132,24 +280,20 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_todo
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'create_todo',
   'Create a new todo item.',
   {
     title: z.string().describe('Title of the todo'),
     description: z.string().optional().describe('Optional description'),
-    priority: z
-      .enum(['low', 'medium', 'high'])
-      .optional()
-      .describe("Priority level: 'low', 'medium', or 'high'"),
+    priority: z.enum(['low', 'medium', 'high']).optional().describe("Priority level: 'low', 'medium', or 'high'"),
     dueDate: z.string().optional().describe('Due date in ISO format (YYYY-MM-DD)'),
     categoryId: z.string().optional().describe('Category ID to assign'),
   },
   async ({ title, description, priority, dueDate, categoryId }) => {
-    const body = { title, description, priority, dueDate, categoryId };
     const data = await daybookFetch('/api/todos', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ title, description, priority, dueDate, categoryId }),
     });
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
   },
@@ -158,12 +302,10 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: complete_todo
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'complete_todo',
-  "Mark a todo as completed by its ID.",
-  {
-    id: z.string().describe('The todo ID to mark as completed'),
-  },
+  'Mark a todo as completed by its ID.',
+  { id: z.string().describe('The todo ID to mark as completed') },
   async ({ id }) => {
     const data = await daybookFetch(`/api/todos/${id}`, {
       method: 'PATCH',
@@ -176,12 +318,10 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: delete_todo
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'delete_todo',
   'Delete a todo by its ID.',
-  {
-    id: z.string().describe('The todo ID to delete'),
-  },
+  { id: z.string().describe('The todo ID to delete') },
   async ({ id }) => {
     const data = await daybookFetch(`/api/todos/${id}`, { method: 'DELETE' });
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -191,7 +331,7 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_events
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'list_events',
   'List calendar events, optionally filtered by date range.',
   {
@@ -211,7 +351,7 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_event
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'create_event',
   'Create a new calendar event.',
   {
@@ -220,16 +360,12 @@ server.tool(
     endAt: z.string().describe('End datetime in ISO 8601 format'),
     description: z.string().optional().describe('Optional description'),
     allDay: z.boolean().optional().describe('Whether this is an all-day event'),
-    rrule: z
-      .string()
-      .optional()
-      .describe('Recurrence rule string (RFC 5545 RRULE)'),
+    rrule: z.string().optional().describe('Recurrence rule string (RFC 5545 RRULE)'),
   },
   async ({ title, startAt, endAt, description, allDay, rrule }) => {
-    const body = { title, startAt, endAt, description, allDay, rrule };
     const data = await daybookFetch('/api/calendar', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ title, startAt, endAt, description, allDay, rrule }),
     });
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
   },
@@ -238,15 +374,10 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_journal_entries
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'list_journal_entries',
   'List journal entries, optionally filtered by month.',
-  {
-    month: z
-      .string()
-      .optional()
-      .describe("Month filter in YYYY-MM format, e.g. '2024-06'"),
-  },
+  { month: z.string().optional().describe("Month filter in YYYY-MM format, e.g. '2024-06'") },
   async ({ month }) => {
     const qs = month ? `?month=${encodeURIComponent(month)}` : '';
     const data = await daybookFetch(`/api/journal${qs}`);
@@ -257,27 +388,20 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_journal_entry
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'create_journal_entry',
   'Create a new journal entry.',
   {
     content: z.string().describe('Body text of the journal entry'),
     title: z.string().optional().describe('Optional title'),
-    mood: z
-      .string()
-      .optional()
-      .describe("Mood label, e.g. 'happy', 'neutral', 'sad'"),
+    mood: z.string().optional().describe("Mood label, e.g. 'happy', 'neutral', 'sad'"),
     tags: z.array(z.string()).optional().describe('Array of tag strings'),
-    entryDate: z
-      .string()
-      .optional()
-      .describe('Date of the entry (YYYY-MM-DD); defaults to today'),
+    entryDate: z.string().optional().describe('Date of the entry (YYYY-MM-DD); defaults to today'),
   },
   async ({ content, title, mood, tags, entryDate }) => {
-    const body = { content, title, mood, tags, entryDate };
     const data = await daybookFetch('/api/journal', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ content, title, mood, tags, entryDate }),
     });
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
   },
@@ -286,14 +410,11 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_transactions
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'list_transactions',
   'List financial transactions, optionally filtered by type and date range.',
   {
-    type: z
-      .enum(['income', 'expense'])
-      .optional()
-      .describe("Transaction type: 'income' or 'expense'"),
+    type: z.enum(['income', 'expense']).optional().describe("Transaction type: 'income' or 'expense'"),
     from: z.string().optional().describe('Start date (YYYY-MM-DD)'),
     to: z.string().optional().describe('End date (YYYY-MM-DD)'),
   },
@@ -311,7 +432,7 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_transaction
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'create_transaction',
   'Record a new financial transaction (income or expense).',
   {
@@ -324,10 +445,9 @@ server.tool(
     merchant: z.string().optional().describe('Optional merchant or payee name'),
   },
   async ({ type, amount, description, date, categoryId, notes, merchant }) => {
-    const body = { type, amount, description, date, categoryId, notes, merchant };
     const data = await daybookFetch('/api/expenses', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ type, amount, description, date, categoryId, notes, merchant }),
     });
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
   },
@@ -336,16 +456,13 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: get_pl_report
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'get_pl_report',
   'Get a profit & loss report for a date range, optionally grouped.',
   {
     from: z.string().describe('Start date (YYYY-MM-DD)'),
     to: z.string().describe('End date (YYYY-MM-DD)'),
-    groupBy: z
-      .enum(['day', 'week', 'month', 'category'])
-      .optional()
-      .describe("Group results by 'day', 'week', 'month', or 'category'"),
+    groupBy: z.enum(['day', 'week', 'month', 'category']).optional().describe("Group results by 'day', 'week', 'month', or 'category'"),
   },
   async ({ from, to, groupBy }) => {
     const params = new URLSearchParams({ from, to });
@@ -358,7 +475,7 @@ server.tool(
 // ---------------------------------------------------------------------------
 // Tool: export_transactions_csv
 // ---------------------------------------------------------------------------
-server.tool(
+mcpServer.tool(
   'export_transactions_csv',
   'Export transactions as CSV text, optionally filtered by date range.',
   {
@@ -376,38 +493,33 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// HTTP server: one transport instance per request (stateless sessions)
+// Express app with OAuth + MCP endpoint
 // ---------------------------------------------------------------------------
-const httpServer = createServer(async (req, res) => {
-  // Health check
-  if (req.method === 'GET' && req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', service: 'daybook-mcp' }));
-    return;
-  }
+const authProvider = new DaybookAuthProvider();
+const issuerUrl = new URL(MCP_SERVER_URL);
 
-  // MCP endpoint
-  if (req.url === '/mcp' || req.url === '/') {
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined, // stateless
-    });
+const app = express();
+app.use(express.json());
 
-    res.on('close', () => {
-      transport.close();
-    });
+// OAuth discovery + token + registration endpoints
+app.use(mcpAuthRouter({ provider: authProvider, issuerUrl, scopesSupported: [] }));
 
-    await server.connect(transport);
-    await transport.handleRequest(req, res);
-    return;
-  }
-
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Not found' }));
+// Health check
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'daybook-mcp' });
 });
 
-httpServer.listen(PORT, () => {
+// MCP endpoint — protected by bearer token
+app.all('/mcp', requireBearerAuth({ verifier: authProvider }), async (req, res) => {
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  res.on('close', () => transport.close());
+  await mcpServer.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+});
+
+app.listen(PORT, () => {
   console.log(`Daybook MCP server listening on http://0.0.0.0:${PORT}`);
-  console.log(`  MCP endpoint : http://0.0.0.0:${PORT}/mcp`);
-  console.log(`  Health check : http://0.0.0.0:${PORT}/health`);
+  console.log(`  MCP endpoint : ${MCP_SERVER_URL}/mcp`);
+  console.log(`  Health check : ${MCP_SERVER_URL}/health`);
   console.log(`  API base URL : ${DAYBOOK_API_URL}`);
 });
