@@ -4,6 +4,8 @@ import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -14,6 +16,9 @@ const DAYBOOK_API_KEY = process.env.DAYBOOK_API_KEY ?? '';
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL ?? 'http://localhost:3001';
 const MCP_AUTH_TOKEN = process.env.DAYBOOK_API_KEY ?? '';
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
+const AUTH_STORE_PATH = process.env.MCP_DATA_DIR
+  ? `${process.env.MCP_DATA_DIR}/auth-store.json`
+  : '/app/data/auth-store.json';
 
 // ---------------------------------------------------------------------------
 // Helper: authenticated fetch against the Daybook REST API
@@ -126,26 +131,49 @@ function renderAuthForm(
 }
 
 // ---------------------------------------------------------------------------
-// In-memory OAuth provider
+// Persistent OAuth provider — survives container restarts via JSON file
 // ---------------------------------------------------------------------------
 type ClientMeta = { client_id: string; client_name?: string; redirect_uris: string[] };
 type CodeData = { client: ClientMeta; params: { redirectUri: string; codeChallenge: string; state?: string; scopes?: string[]; resource?: URL } };
-type TokenData = { clientId: string; scopes: string[]; expiresAt: number; resource?: URL };
+type TokenData = { clientId: string; scopes: string[]; expiresAt: number; resource?: string };
+
+interface AuthStore {
+  clients: Record<string, ClientMeta>;
+  tokens: Record<string, TokenData>;
+}
+
+function loadStore(): AuthStore {
+  try {
+    const raw = readFileSync(AUTH_STORE_PATH, 'utf8');
+    return JSON.parse(raw) as AuthStore;
+  } catch {
+    return { clients: {}, tokens: {} };
+  }
+}
+
+function saveStore(store: AuthStore): void {
+  try {
+    mkdirSync(dirname(AUTH_STORE_PATH), { recursive: true });
+    writeFileSync(AUTH_STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to persist auth store:', err);
+  }
+}
 
 class DaybookAuthProvider {
+  private store: AuthStore = loadStore();
+  private codes = new Map<string, CodeData>();
+
   clientsStore = {
-    clients: new Map<string, ClientMeta>(),
-    async getClient(clientId: string): Promise<ClientMeta | undefined> {
-      return this.clients.get(clientId);
+    getClient: async (clientId: string): Promise<ClientMeta | undefined> => {
+      return this.store.clients[clientId];
     },
-    async registerClient(metadata: ClientMeta): Promise<ClientMeta> {
-      this.clients.set(metadata.client_id, metadata);
+    registerClient: async (metadata: ClientMeta): Promise<ClientMeta> => {
+      this.store.clients[metadata.client_id] = metadata;
+      saveStore(this.store);
       return metadata;
     },
   };
-
-  private codes = new Map<string, CodeData>();
-  private tokens = new Map<string, TokenData>();
 
   async authorize(
     client: ClientMeta,
@@ -186,17 +214,18 @@ class DaybookAuthProvider {
     this.codes.delete(authorizationCode);
 
     const token = randomUUID();
-    this.tokens.set(token, {
+    this.store.tokens[token] = {
       clientId: client.client_id,
       scopes: data.params.scopes ?? [],
-      expiresAt: Date.now() + 24 * 3600 * 1000,
-      resource: data.params.resource,
-    });
+      expiresAt: Date.now() + 30 * 24 * 3600 * 1000, // 30 days
+      resource: data.params.resource?.toString(),
+    };
+    saveStore(this.store);
 
     return {
       access_token: token,
       token_type: 'bearer',
-      expires_in: 86400,
+      expires_in: 30 * 86400,
       scope: (data.params.scopes ?? []).join(' '),
     };
   }
@@ -206,14 +235,22 @@ class DaybookAuthProvider {
   }
 
   async verifyAccessToken(token: string): Promise<{ token: string; clientId: string; scopes: string[]; expiresAt: number; resource?: URL }> {
-    const data = this.tokens.get(token);
-    if (!data || data.expiresAt < Date.now()) throw new Error('Invalid or expired token');
+    // Prune expired tokens lazily
+    const now = Date.now();
+    const data = this.store.tokens[token];
+    if (!data || data.expiresAt < now) {
+      if (data) {
+        delete this.store.tokens[token];
+        saveStore(this.store);
+      }
+      throw new Error('Invalid or expired token');
+    }
     return {
       token,
       clientId: data.clientId,
       scopes: data.scopes,
       expiresAt: Math.floor(data.expiresAt / 1000),
-      resource: data.resource,
+      resource: data.resource ? new URL(data.resource) : undefined,
     };
   }
 }

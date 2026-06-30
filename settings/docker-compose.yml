@@ -67,10 +67,13 @@ services:
       DAYBOOK_API_KEY: ${DAYBOOK_MCP_KEY:-}
       MCP_SERVER_URL: https://mcpdaybook.thecontentwarrior.work
       PORT: 3501
+    volumes:
+      - daybook_mcp_data:/app/data
     networks:
       - postiz-network
 
 volumes:
   daybook_postgres_data:
   daybook_uploads:
+  daybook_mcp_data:
 
