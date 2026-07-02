@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { PlusIcon, Trash2Icon, DownloadIcon, TrendingUpIcon, TrendingDownIcon, BarChart2Icon, TagIcon, PencilIcon } from 'lucide-react';
+import { PlusIcon, Trash2Icon, DownloadIcon, TrendingUpIcon, TrendingDownIcon, BarChart2Icon, TagIcon, PencilIcon, PaperclipIcon, XIcon, ExternalLinkIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ interface ExpenseTransaction {
   notes: string | null;
   categoryId: string | null;
   importedFrom: string | null;
+  receiptUrl: string | null;
   createdAt: string;
 }
 
@@ -131,9 +132,24 @@ function AddTransactionDialog({ categories, onSuccess, className }: AddTransacti
   const [categoryId, setCategoryId] = useState('');
   const [merchant, setMerchant] = useState('');
   const [notes, setNotes] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const filteredCategories = categories.filter((c) => c.type === type);
+
+  const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setReceiptFile(file);
+    if (receiptPreview) URL.revokeObjectURL(receiptPreview);
+    setReceiptPreview(file ? URL.createObjectURL(file) : null);
+  };
+
+  const clearReceipt = () => {
+    setReceiptFile(null);
+    if (receiptPreview) URL.revokeObjectURL(receiptPreview);
+    setReceiptPreview(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,6 +176,14 @@ function AddTransactionDialog({ categories, onSuccess, className }: AddTransacti
         const err = await res.json();
         throw new Error(err.error ?? 'Failed to create transaction');
       }
+      const tx = await res.json();
+
+      if (receiptFile) {
+        const fd = new FormData();
+        fd.append('receipt', receiptFile);
+        await fetch(`/api/expenses/${tx.id}/receipt`, { method: 'POST', body: fd });
+      }
+
       toast.success('Transaction added');
       setOpen(false);
       setAmount('');
@@ -168,6 +192,7 @@ function AddTransactionDialog({ categories, onSuccess, className }: AddTransacti
       setCategoryId('');
       setMerchant('');
       setNotes('');
+      clearReceipt();
       onSuccess();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create transaction');
@@ -291,6 +316,37 @@ function AddTransactionDialog({ categories, onSuccess, className }: AddTransacti
             />
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <Label>Receipt / Invoice (optional)</Label>
+            {receiptPreview ? (
+              <div className="relative w-full">
+                <img
+                  src={receiptPreview}
+                  alt="Receipt preview"
+                  className="w-full max-h-48 object-contain rounded-lg border bg-muted/30"
+                />
+                <button
+                  type="button"
+                  onClick={clearReceipt}
+                  className="absolute top-1 right-1 rounded-full bg-background/80 p-0.5 border hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground hover:border-primary hover:text-foreground transition-colors">
+                <PaperclipIcon className="size-4 shrink-0" />
+                <span>Attach image (JPEG, PNG, WEBP, HEIC…)</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={handleReceiptChange}
+                />
+              </label>
+            )}
+          </div>
+
           <DialogFooter>
             <Button type="submit" disabled={loading}>
               {loading ? 'Adding...' : 'Add Transaction'}
@@ -319,6 +375,10 @@ function EditTransactionDialog({ transaction, categories, onSuccess }: EditTrans
   const [categoryId, setCategoryId] = useState(transaction.categoryId ?? '');
   const [merchant, setMerchant] = useState(transaction.merchant ?? '');
   const [notes, setNotes] = useState(transaction.notes ?? '');
+  const [receiptUrl, setReceiptUrl] = useState(transaction.receiptUrl ?? null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleOpenChange = (o: boolean) => {
@@ -330,8 +390,52 @@ function EditTransactionDialog({ transaction, categories, onSuccess }: EditTrans
       setCategoryId(transaction.categoryId ?? '');
       setMerchant(transaction.merchant ?? '');
       setNotes(transaction.notes ?? '');
+      setReceiptUrl(transaction.receiptUrl ?? null);
+      setReceiptFile(null);
+      setReceiptPreview(null);
     }
     setOpen(o);
+  };
+
+  const handleReceiptChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+    setReceiptFile(file);
+    if (receiptPreview) URL.revokeObjectURL(receiptPreview);
+    setReceiptPreview(URL.createObjectURL(file));
+    setReceiptLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append('receipt', file);
+      const res = await fetch(`/api/expenses/${transaction.id}/receipt`, { method: 'POST', body: fd });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+      setReceiptUrl(data.receiptUrl);
+      toast.success('Receipt attached');
+    } catch {
+      toast.error('Failed to upload receipt');
+      setReceiptFile(null);
+      setReceiptPreview(null);
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
+
+  const handleRemoveReceipt = async () => {
+    setReceiptLoading(true);
+    try {
+      const res = await fetch(`/api/expenses/${transaction.id}/receipt`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to remove receipt');
+      setReceiptUrl(null);
+      setReceiptFile(null);
+      if (receiptPreview) URL.revokeObjectURL(receiptPreview);
+      setReceiptPreview(null);
+      toast.success('Receipt removed');
+    } catch {
+      toast.error('Failed to remove receipt');
+    } finally {
+      setReceiptLoading(false);
+    }
   };
 
   const filteredCategories = categories.filter((c) => c.type === type);
@@ -482,6 +586,56 @@ function EditTransactionDialog({ transaction, categories, onSuccess }: EditTrans
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Receipt / Invoice</Label>
+            {(receiptPreview || receiptUrl) ? (
+              <div className="relative w-full">
+                <img
+                  src={receiptPreview ?? receiptUrl!}
+                  alt="Receipt"
+                  className="w-full max-h-48 object-contain rounded-lg border bg-muted/30"
+                />
+                <div className="absolute top-1 right-1 flex gap-1">
+                  <a
+                    href={receiptUrl ?? receiptPreview!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-full bg-background/80 p-0.5 border hover:bg-muted transition-colors"
+                    title="Open full size"
+                  >
+                    <ExternalLinkIcon className="size-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleRemoveReceipt}
+                    disabled={receiptLoading}
+                    className="rounded-full bg-background/80 p-0.5 border hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                    title="Remove receipt"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                </div>
+                {receiptLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60 text-xs text-muted-foreground">
+                    Uploading…
+                  </div>
+                )}
+              </div>
+            ) : (
+              <label className={`flex cursor-pointer items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground hover:border-primary hover:text-foreground transition-colors ${receiptLoading ? 'pointer-events-none opacity-50' : ''}`}>
+                <PaperclipIcon className="size-4 shrink-0" />
+                <span>{receiptLoading ? 'Uploading…' : 'Attach image (JPEG, PNG, WEBP, HEIC…)'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={handleReceiptChange}
+                  disabled={receiptLoading}
+                />
+              </label>
+            )}
           </div>
 
           <DialogFooter>
@@ -851,7 +1005,21 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
                           {format(new Date(tx.date), 'MMM d, yyyy')}
                         </td>
                         <td className="px-2 md:px-4 py-3 max-w-0 w-full">
-                          <div className="font-medium leading-tight truncate">{tx.description}</div>
+                          <div className="flex items-center gap-1.5 leading-tight">
+                            <span className="font-medium truncate">{tx.description}</span>
+                            {tx.receiptUrl && (
+                              <a
+                                href={tx.receiptUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                title="View receipt"
+                                className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                <PaperclipIcon className="size-3.5" />
+                              </a>
+                            )}
+                          </div>
                           {tx.merchant && (
                             <div className="text-xs text-muted-foreground mt-0.5 truncate">{tx.merchant}</div>
                           )}

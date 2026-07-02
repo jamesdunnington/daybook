@@ -243,6 +243,7 @@ export const expenseTransactions = pgTable(
     importedFrom: text('imported_from'),
     importBatchId: uuid('import_batch_id'),
     externalId: text('external_id'),
+    receiptUrl: text('receipt_url'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

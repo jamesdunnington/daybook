@@ -642,6 +642,117 @@ mcpServer.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: delete_transaction
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'delete_transaction',
+  'Delete a financial transaction by its ID.',
+  { id: z.string().describe('The transaction ID to delete') },
+  async ({ id }) => runTool(() => daybookFetch(`/api/expenses/${id}`, { method: 'DELETE' })),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: update_todo
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'update_todo',
+  'Update an existing todo item by ID. Only provided fields are changed.',
+  {
+    id: z.string().describe('The todo ID to update'),
+    title: z.string().optional().describe('New title'),
+    description: z.string().optional().describe('New description'),
+    status: z.enum(['pending', 'completed']).optional().describe("New status: 'pending' or 'completed'"),
+    priority: z.enum(['low', 'medium', 'high']).optional().describe('New priority'),
+    dueDate: z.string().optional().describe('New due date (YYYY-MM-DD), or empty string to clear'),
+    categoryId: z.string().optional().describe('New category ID, or empty string to clear'),
+  },
+  async ({ id, title, description, status, priority, dueDate, categoryId }) => runTool(async () => {
+    const body: Record<string, unknown> = {};
+    if (title !== undefined) body.title = title;
+    if (description !== undefined) body.description = description;
+    if (status !== undefined) body.status = status;
+    if (priority !== undefined) body.priority = priority;
+    if (dueDate !== undefined) body.dueDate = dueDate || null;
+    if (categoryId !== undefined) body.categoryId = categoryId || null;
+    return daybookFetch(`/api/todos/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: update_event
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'update_event',
+  'Update an existing calendar event by ID. Only provided fields are changed.',
+  {
+    id: z.string().describe('The event ID to update'),
+    title: z.string().optional().describe('New title'),
+    description: z.string().optional().describe('New description'),
+    startAt: z.string().optional().describe('New start datetime (ISO 8601)'),
+    endAt: z.string().optional().describe('New end datetime (ISO 8601)'),
+    allDay: z.boolean().optional().describe('Whether this is an all-day event'),
+    location: z.string().optional().describe('New location'),
+    color: z.string().optional().describe("New color hex, e.g. '#6366f1'"),
+    rrule: z.string().optional().describe('New recurrence rule (RFC 5545 RRULE), or empty string to remove'),
+  },
+  async ({ id, title, description, startAt, endAt, allDay, location, color, rrule }) => runTool(async () => {
+    const body: Record<string, unknown> = {};
+    if (title !== undefined) body.title = title;
+    if (description !== undefined) body.description = description;
+    if (startAt !== undefined) body.startAt = startAt;
+    if (endAt !== undefined) body.endAt = endAt;
+    if (allDay !== undefined) body.allDay = allDay;
+    if (location !== undefined) body.location = location;
+    if (color !== undefined) body.color = color;
+    if (rrule !== undefined) body.rrule = rrule;
+    return daybookFetch(`/api/calendar/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: delete_event
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'delete_event',
+  'Delete a calendar event by its ID.',
+  { id: z.string().describe('The event ID to delete') },
+  async ({ id }) => runTool(() => daybookFetch(`/api/calendar/${id}`, { method: 'DELETE' })),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: update_journal_entry
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'update_journal_entry',
+  'Update an existing journal entry by ID. Only provided fields are changed.',
+  {
+    id: z.string().describe('The journal entry ID to update'),
+    title: z.string().optional().describe('New title, or empty string to clear'),
+    content: z.string().optional().describe('New body text'),
+    mood: z.string().optional().describe("New mood label, e.g. 'happy', 'neutral', 'sad', or empty string to clear"),
+    tags: z.array(z.string()).optional().describe('New array of tag strings (replaces existing tags)'),
+  },
+  async ({ id, title, content, mood, tags }) => runTool(async () => {
+    const body: Record<string, unknown> = {};
+    if (title !== undefined) body.title = title || null;
+    if (content !== undefined) body.content = content;
+    if (mood !== undefined) body.mood = mood || null;
+    if (tags !== undefined) body.tags = tags;
+    return daybookFetch(`/api/journal/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: delete_journal_entry
+// ---------------------------------------------------------------------------
+mcpServer.tool(
+  'delete_journal_entry',
+  'Delete a journal entry and all its attached photos by ID.',
+  { id: z.string().describe('The journal entry ID to delete') },
+  async ({ id }) => runTool(() => daybookFetch(`/api/journal/${id}`, { method: 'DELETE' })),
+);
+
+// ---------------------------------------------------------------------------
 // Express app with OAuth + MCP endpoint
 // ---------------------------------------------------------------------------
 const authProvider = new DaybookAuthProvider();

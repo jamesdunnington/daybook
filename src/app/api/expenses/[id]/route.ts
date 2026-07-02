@@ -48,6 +48,7 @@ export async function PATCH(
   if (body.categoryId !== undefined) updates.categoryId = body.categoryId;
   if (body.notes !== undefined) updates.notes = body.notes;
   if (body.merchant !== undefined) updates.merchant = body.merchant;
+  if (body.receiptUrl !== undefined) updates.receiptUrl = body.receiptUrl;
   updates.updatedAt = new Date();
 
   const [updated] = await db

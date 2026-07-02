@@ -4,14 +4,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 daybook.thecontentwarrior.work {
-    reverse_proxy daybook-app:3000
+    reverse_proxy daybook-app:3500
     header {
         Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
     }
 }
 
 mcpdaybook.thecontentwarrior.work {
-    reverse_proxy daybook-mcp:3001
+    reverse_proxy daybook-mcp:3501
     header {
         Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
     }
