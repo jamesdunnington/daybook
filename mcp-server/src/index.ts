@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express from 'express';
@@ -256,14 +256,15 @@ class DaybookAuthProvider {
 }
 
 // ---------------------------------------------------------------------------
-// MCP server setup
+// MCP server factory — called once per SSE session
 // ---------------------------------------------------------------------------
-const mcpServer = new McpServer({ name: 'daybook-mcp', version: '1.0.0' });
+function buildServer(): McpServer {
+const server = new McpServer({ name: 'daybook-mcp', version: '1.0.0' });
 
 // ---------------------------------------------------------------------------
 // Tool: get_dashboard_summary
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'get_dashboard_summary',
   'Returns a markdown summary of pending todos and upcoming calendar events for the next 14 days.',
   {},
@@ -317,7 +318,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_todos
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'list_todos',
   'List todos, optionally filtered by status and/or categoryId.',
   {
@@ -336,7 +337,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_todo
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'create_todo',
   'Create a new todo item.',
   {
@@ -357,7 +358,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: complete_todo
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'complete_todo',
   'Mark a todo as completed by its ID.',
   { id: z.string().describe('The todo ID to mark as completed') },
@@ -372,7 +373,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: delete_todo
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'delete_todo',
   'Delete a todo by its ID.',
   { id: z.string().describe('The todo ID to delete') },
@@ -382,7 +383,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_events
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'list_events',
   'List calendar events, optionally filtered by date range.',
   {
@@ -401,7 +402,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_event
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'create_event',
   'Create a new calendar event.',
   {
@@ -423,7 +424,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_journal_entries
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'list_journal_entries',
   'List journal entries, optionally filtered by month.',
   { month: z.string().optional().describe("Month filter in YYYY-MM format, e.g. '2024-06'") },
@@ -436,7 +437,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_journal_entry
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'create_journal_entry',
   'Create a new journal entry.',
   {
@@ -457,7 +458,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_transactions
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'list_transactions',
   'List financial transactions, optionally filtered by type and date range.',
   {
@@ -478,7 +479,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_transaction
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'create_transaction',
   'Record a new financial transaction (income or expense).',
   {
@@ -501,7 +502,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: get_pl_report
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'get_pl_report',
   'Get a profit & loss report for a date range, optionally grouped.',
   {
@@ -519,7 +520,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: export_transactions_csv
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'export_transactions_csv',
   'Export transactions as CSV text, optionally filtered by date range.',
   {
@@ -538,7 +539,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: update_transaction
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'update_transaction',
   'Update an existing financial transaction by ID.',
   {
@@ -567,7 +568,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_expense_categories
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'list_expense_categories',
   'List all expense and income categories.',
   {},
@@ -577,7 +578,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_expense_category
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'create_expense_category',
   'Create a new expense or income category.',
   {
@@ -596,7 +597,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: delete_expense_category
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'delete_expense_category',
   'Delete an expense/income category by its ID.',
   { id: z.string().describe('The category ID to delete') },
@@ -606,7 +607,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: list_todo_categories
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'list_todo_categories',
   'List all todo categories.',
   {},
@@ -616,7 +617,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: create_todo_category
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'create_todo_category',
   'Create a new todo category.',
   {
@@ -634,7 +635,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: delete_todo_category
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'delete_todo_category',
   'Delete a todo category by its ID.',
   { id: z.string().describe('The category ID to delete') },
@@ -644,7 +645,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: delete_transaction
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'delete_transaction',
   'Delete a financial transaction by its ID.',
   { id: z.string().describe('The transaction ID to delete') },
@@ -654,7 +655,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: update_todo
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'update_todo',
   'Update an existing todo item by ID. Only provided fields are changed.',
   {
@@ -681,7 +682,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: update_event
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'update_event',
   'Update an existing calendar event by ID. Only provided fields are changed.',
   {
@@ -712,7 +713,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: delete_event
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'delete_event',
   'Delete a calendar event by its ID.',
   { id: z.string().describe('The event ID to delete') },
@@ -722,7 +723,7 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: update_journal_entry
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'update_journal_entry',
   'Update an existing journal entry by ID. Only provided fields are changed.',
   {
@@ -745,16 +746,23 @@ mcpServer.tool(
 // ---------------------------------------------------------------------------
 // Tool: delete_journal_entry
 // ---------------------------------------------------------------------------
-mcpServer.tool(
+server.tool(
   'delete_journal_entry',
   'Delete a journal entry and all its attached photos by ID.',
   { id: z.string().describe('The journal entry ID to delete') },
   async ({ id }) => runTool(() => daybookFetch(`/api/journal/${id}`, { method: 'DELETE' })),
 );
 
+  return server;
+}
+
 // ---------------------------------------------------------------------------
-// Express app with OAuth + MCP endpoint
+// Express app with OAuth + SSE endpoints
 // ---------------------------------------------------------------------------
+
+// Active SSE sessions: sessionId → transport
+const sessions = new Map<string, SSEServerTransport>();
+
 const authProvider = new DaybookAuthProvider();
 const issuerUrl = new URL(MCP_SERVER_URL);
 
@@ -769,19 +777,32 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'daybook-mcp' });
 });
 
-// MCP endpoint — protected by bearer token
-// resourceMetadataUrl tells Claude where to find OAuth discovery when it gets a 401
-const resourceMetadataUrl = `${MCP_SERVER_URL}/.well-known/oauth-protected-resource/mcp`;
-app.all('/mcp', requireBearerAuth({ verifier: authProvider, resourceMetadataUrl }), async (req, res) => {
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  res.on('close', () => transport.close());
-  await mcpServer.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+const resourceMetadataUrl = `${MCP_SERVER_URL}/.well-known/oauth-protected-resource/sse`;
+
+// SSE connection endpoint — client connects here to open the persistent stream
+app.get('/sse', requireBearerAuth({ verifier: authProvider, resourceMetadataUrl }), async (req, res) => {
+  const transport = new SSEServerTransport('/messages', res);
+  sessions.set(transport.sessionId, transport);
+  res.on('close', () => sessions.delete(transport.sessionId));
+  const server = buildServer();
+  await server.connect(transport);
+});
+
+// Message endpoint — client POSTs tool calls here, keyed by sessionId
+app.post('/messages', requireBearerAuth({ verifier: authProvider, resourceMetadataUrl }), async (req, res) => {
+  const sessionId = req.query.sessionId as string;
+  const transport = sessions.get(sessionId);
+  if (!transport) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+  await transport.handlePostMessage(req, res, req.body);
 });
 
 app.listen(PORT, () => {
   console.log(`Daybook MCP server listening on http://0.0.0.0:${PORT}`);
-  console.log(`  MCP endpoint : ${MCP_SERVER_URL}/mcp`);
-  console.log(`  Health check : ${MCP_SERVER_URL}/health`);
-  console.log(`  API base URL : ${DAYBOOK_API_URL}`);
+  console.log(`  SSE endpoint  : ${MCP_SERVER_URL}/sse`);
+  console.log(`  Messages      : ${MCP_SERVER_URL}/messages`);
+  console.log(`  Health check  : ${MCP_SERVER_URL}/health`);
+  console.log(`  API base URL  : ${DAYBOOK_API_URL}`);
 });
