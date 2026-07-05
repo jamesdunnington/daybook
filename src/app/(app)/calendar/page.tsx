@@ -677,6 +677,28 @@ export default function CalendarPage() {
     queryFn: () => fetchEvents(rangeStart, rangeEnd),
   });
 
+  const thisWeekStart = useMemo(() => startOfWeek(new Date()), []);
+  const thisWeekEnd = useMemo(() => endOfWeek(new Date()), []);
+  const weekDays = useMemo(() => eachDayOfInterval({ start: thisWeekStart, end: thisWeekEnd }), [thisWeekStart, thisWeekEnd]);
+
+  const weekEventsByDay = useMemo(() => {
+    const map: Record<string, CalendarEvent[]> = {};
+    for (const day of weekDays) {
+      map[format(day, 'yyyy-MM-dd')] = [];
+    }
+    for (const event of events) {
+      const evStart = new Date(event.startAt);
+      const evEnd = new Date(event.endAt);
+      for (const day of weekDays) {
+        const dayMs = day.getTime();
+        if (evStart.getTime() <= dayMs + 86399999 && evEnd.getTime() >= dayMs) {
+          map[format(day, 'yyyy-MM-dd')].push(event);
+        }
+      }
+    }
+    return map;
+  }, [events, weekDays]);
+
   function handleDayClick(day: Date) {
     setSelectedDay(day);
     setAddOpen(true);
@@ -762,6 +784,50 @@ export default function CalendarPage() {
           onEventClick={handleEventClick}
         />
       )}
+
+      {/* This Week */}
+      <div className="mt-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold">This Week</h2>
+          <span className="text-xs text-muted-foreground">
+            {format(thisWeekStart, 'MMM d')} – {format(thisWeekEnd, 'MMM d')}
+          </span>
+        </div>
+
+        {weekDays.every((day) => (weekEventsByDay[format(day, 'yyyy-MM-dd')]?.length ?? 0) === 0) ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">No events this week</p>
+        ) : (
+          <div className="space-y-4">
+            {weekDays.map((day) => {
+              const key = format(day, 'yyyy-MM-dd');
+              const dayEvents = weekEventsByDay[key];
+              if (!dayEvents?.length) return null;
+              return (
+                <div key={key}>
+                  <p className={`mb-1.5 text-xs font-medium ${isToday(day) ? 'text-primary' : 'text-muted-foreground'}`}>
+                    {isToday(day) ? 'Today' : format(day, 'EEE, MMM d')}
+                  </p>
+                  <div className="space-y-1.5">
+                    {dayEvents.map((event) => (
+                      <button
+                        key={`${event.id}-${event.instanceDate}-week`}
+                        className="flex w-full items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50"
+                        onClick={() => handleEventClick(event)}
+                      >
+                        <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: event.color }} />
+                        <span className="flex-1 truncate font-medium">{event.title}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {event.allDay ? 'All day' : format(new Date(event.startAt), 'h:mm a')}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Add Event Dialog */}
       <AddEventDialog
