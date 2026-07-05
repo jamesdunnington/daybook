@@ -12,8 +12,6 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
-# Generate Drizzle migrations
-RUN npx drizzle-kit generate
 RUN npm run build
 
 # Stage 3: Minimal runtime
