@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Send, Paperclip, Plus, Trash2, MessageSquare, Bot, User } from 'lucide-react';
+import { Send, Paperclip, Plus, Trash2, MessageSquare, Bot, User, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -540,23 +540,70 @@ export default function ChatPage() {
   const showEmptyState = conversations.length === 0;
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
-      {/* Sidebar */}
-      <Sidebar
-        conversations={conversations}
-        selectedId={selectedConvId}
-        onSelect={(id) => {
-          if (id !== selectedConvId) {
-            setMessages([]);
-            setSelectedConvId(id);
-          }
-        }}
-        onNew={handleNewChat}
-        onDelete={handleDelete}
-      />
+    <div className="flex h-[calc(100vh-4rem)] md:h-full overflow-hidden">
+      {/* Sidebar — desktop only */}
+      <div className="hidden md:flex">
+        <Sidebar
+          conversations={conversations}
+          selectedId={selectedConvId}
+          onSelect={(id) => {
+            if (id !== selectedConvId) {
+              setMessages([]);
+              setSelectedConvId(id);
+            }
+          }}
+          onNew={handleNewChat}
+          onDelete={handleDelete}
+        />
+      </div>
 
-      {/* Main area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Mobile conversation list — shown when no conversation is selected */}
+      <div className={`flex flex-1 flex-col overflow-hidden md:hidden ${selectedConvId ? 'hidden' : ''}`}>
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            <MessageSquare className="size-4" />
+            Chats
+          </span>
+          <Button size="icon-sm" variant="ghost" onClick={handleNewChat} title="New chat">
+            <Plus />
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-1">
+          {conversations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+              <div className="flex size-16 items-center justify-center rounded-full bg-muted">
+                <MessageSquare className="size-8 text-muted-foreground" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold">Start a new chat</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Ask anything about your finances or upload a CSV to import transactions.
+                </p>
+              </div>
+              <Button onClick={handleNewChat}>
+                <Plus />
+                New Chat
+              </Button>
+            </div>
+          ) : (
+            conversations.map((conv) => (
+              <ConversationItem
+                key={conv.id}
+                conv={conv}
+                isSelected={conv.id === selectedConvId}
+                onSelect={() => {
+                  setMessages([]);
+                  setSelectedConvId(conv.id);
+                }}
+                onDelete={() => handleDelete(conv.id)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Main area — on mobile only shown when a conversation is active */}
+      <div className={`flex flex-1 flex-col overflow-hidden ${!selectedConvId ? 'hidden md:flex' : ''}`}>
         {showEmptyState && !selectedConvId ? (
           // Empty state — no conversations at all
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
@@ -588,6 +635,14 @@ export default function ChatPage() {
           <>
             {/* Chat header */}
             <div className="flex items-center gap-3 border-b bg-background px-4 py-3">
+              <Button
+                className="md:hidden -ml-1 mr-0 shrink-0"
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => setSelectedConvId(null)}
+              >
+                <ChevronLeft />
+              </Button>
               <Bot className="size-4 text-muted-foreground" />
               <div className="flex-1 min-w-0">
                 <h1 className="truncate text-sm font-medium">
