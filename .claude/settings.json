@@ -4,7 +4,32 @@
       "Bash(Get-ChildItem -Path \"d:\\\\Vibe Coding\\\\daybook\" -Recurse -Force)",
       "Bash(Select-Object FullName, PSIsContainer)",
       "Bash(Sort-Object FullName)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(npx shadcn@latest init --defaults --yes)",
+      "Bash(npx shadcn@latest add card dialog input label select textarea badge popover sheet tabs avatar separator switch table form command checkbox dropdown-menu toast --yes)",
+      "Bash(npx shadcn@latest add card dialog input label select textarea badge popover sheet tabs avatar separator switch table form command checkbox dropdown-menu sonner --yes)",
+      "Bash(mkdir -p \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\auth\\\\[...all]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(auth\\)\\\\login\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(auth\\)\\\\register\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(app\\)\\\\dashboard\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(app\\)\\\\todos\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(app\\)\\\\calendar\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(app\\)\\\\journal\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(app\\)\\\\expenses\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(app\\)\\\\chat\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\\\(app\\)\\\\settings\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\admin\\\\users\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\todos\\\\[id]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\todos\\\\categories\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\calendar\\\\[id]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\journal\\\\[id]\\\\photos\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\expenses\\\\[id]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\expenses\\\\categories\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\expenses\\\\reports\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\expenses\\\\export\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\expenses\\\\batch\\\\[id]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\chat\\\\[conversationId]\\\\messages\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\chat\\\\[conversationId]\\\\upload\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\chat\\\\[conversationId]\\\\confirm-import\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\admin\\\\users\\\\[id]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\admin\\\\settings\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\settings\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\keys\\\\[id]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\uploads\\\\[...path]\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\openapi\" \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\docs\" 2>&1)",
+      "Bash(mkdir -p \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\chat\\\\[conversationId]\" 2>&1; echo \"done\")",
+      "Bash(node -e ' *)",
+      "Bash(npx drizzle-kit *)",
+      "Bash(gh auth *)",
+      "Bash(gh --version)",
+      "Bash(gh repo *)",
+      "Bash(dir \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\todos\\\\categories\" /b)",
+      "Bash(dir \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\expenses\\\\categories\" /b)",
+      "PowerShell(cd \"d:\\\\Vibe Coding\\\\daybook\"; gh run watch 28421830671 --exit-status; echo \"Exit: $LASTEXITCODE\")",
+      "Bash(node -e \"const t = require\\('./node_modules/@base-ui/react/select'\\); console.log\\(Object.keys\\(t\\)\\)\")",
+      "Bash(dir \"d:\\\\Vibe Coding\\\\daybook\\\\node_modules\\\\@base-ui\\\\react\\\\select\\\\item\")",
+      "Bash(dir \"d:\\\\Vibe Coding\\\\daybook\\\\node_modules\\\\@base-ui\\\\react\\\\select\\\\value\")",
+      "PowerShell(git -C \"d:\\\\Vibe Coding\\\\daybook\" push origin main)",
+      "PowerShell(gh run list --repo jamesdunnington/daybook --limit 3)",
+      "PowerShell(gh run watch 28453145100 --repo jamesdunnington/daybook --exit-status)",
+      "Bash(mkdir -p \"d:\\\\Vibe Coding\\\\daybook\\\\src\\\\app\\\\api\\\\expenses\\\\[id]\\\\receipt\")"
+    ],
+    "additionalDirectories": [
+      "d:\\Vibe Coding\\daybook\\src\\app\\api\\auth",
+      "d:\\Vibe Coding\\daybook\\src\\app\\api\\chat\\[conversationId]",
+      "d:\\Vibe Coding\\daybook\\src\\app\\api\\expenses\\[id]"
     ]
   }
 }

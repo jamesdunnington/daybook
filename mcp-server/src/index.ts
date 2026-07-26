@@ -44,6 +44,49 @@ async function daybookFetch(path: string, options?: RequestInit): Promise<unknow
 }
 
 // ---------------------------------------------------------------------------
+// Helper: authenticated multipart upload against the Daybook REST API
+// ---------------------------------------------------------------------------
+async function daybookUpload(path: string, form: FormData): Promise<unknown> {
+  const url = `${DAYBOOK_API_URL}${path}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${DAYBOOK_API_KEY}` },
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${await res.text()}`);
+  }
+  const contentType = res.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return res.json();
+  }
+  return res.text();
+}
+
+const EXT_TO_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  tiff: 'image/tiff',
+  tif: 'image/tiff',
+  avif: 'image/avif',
+};
+
+function guessMimeType(filename?: string): string | undefined {
+  const ext = filename?.split('.').pop()?.toLowerCase();
+  return ext ? EXT_TO_MIME[ext] : undefined;
+}
+
+function extForMime(mimeType: string): string {
+  const found = Object.entries(EXT_TO_MIME).find(([, mt]) => mt === mimeType);
+  return found ? found[0] : 'jpg';
+}
+
+// ---------------------------------------------------------------------------
 // Helper: wrap tool handlers so errors surface as readable MCP responses
 // ---------------------------------------------------------------------------
 type ToolContent = { type: 'text'; text: string };
@@ -452,6 +495,85 @@ server.tool(
       method: 'POST',
       body: JSON.stringify({ content, title, mood, tags, entryDate }),
     }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: upload_journal_photo
+// ---------------------------------------------------------------------------
+server.tool(
+  'upload_journal_photo',
+  'Attach one or more photos to a journal entry. Provide each image as base64-encoded data (no data: URL prefix).',
+  {
+    entryId: z.string().describe('The journal entry ID to attach photo(s) to'),
+    images: z
+      .array(
+        z.object({
+          data: z.string().describe('Base64-encoded image data (no data: URL prefix)'),
+          filename: z.string().optional().describe("Original filename, e.g. 'photo.jpg'"),
+          mimeType: z.string().optional().describe("MIME type, e.g. 'image/jpeg'; inferred from filename if omitted, defaults to image/jpeg"),
+        }),
+      )
+      .min(1)
+      .describe('Array of images to upload (multiple photos can be attached in one call)'),
+  },
+  async ({ entryId, images }) => runTool(async () => {
+    const form = new FormData();
+    for (const img of images) {
+      const mimeType = img.mimeType ?? guessMimeType(img.filename) ?? 'image/jpeg';
+      const filename = img.filename ?? `photo.${extForMime(mimeType)}`;
+      const blob = new Blob([Buffer.from(img.data, 'base64')], { type: mimeType });
+      form.append('photos', blob, filename);
+    }
+    return daybookUpload(`/api/journal/${entryId}/photos`, form);
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: delete_journal_photo
+// ---------------------------------------------------------------------------
+server.tool(
+  'delete_journal_photo',
+  'Delete a single photo attached to a journal entry.',
+  {
+    entryId: z.string().describe('The journal entry ID the photo is attached to'),
+    photoId: z.string().describe('The photo ID to delete'),
+  },
+  async ({ entryId, photoId }) => runTool(() =>
+    daybookFetch(`/api/journal/${entryId}/photos?photoId=${encodeURIComponent(photoId)}`, { method: 'DELETE' }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: upload_expense_receipt
+// ---------------------------------------------------------------------------
+server.tool(
+  'upload_expense_receipt',
+  'Attach or replace the receipt image for a financial transaction. Provide the image as base64-encoded data (no data: URL prefix). Replaces any existing receipt.',
+  {
+    transactionId: z.string().describe('The transaction ID to attach the receipt to'),
+    data: z.string().describe('Base64-encoded image data (no data: URL prefix)'),
+    filename: z.string().optional().describe("Original filename, e.g. 'receipt.jpg'"),
+    mimeType: z.string().optional().describe("MIME type, e.g. 'image/jpeg'; inferred from filename if omitted, defaults to image/jpeg"),
+  },
+  async ({ transactionId, data, filename, mimeType }) => runTool(async () => {
+    const mt = mimeType ?? guessMimeType(filename) ?? 'image/jpeg';
+    const fname = filename ?? `receipt.${extForMime(mt)}`;
+    const form = new FormData();
+    form.append('receipt', new Blob([Buffer.from(data, 'base64')], { type: mt }), fname);
+    return daybookUpload(`/api/expenses/${transactionId}/receipt`, form);
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: delete_expense_receipt
+// ---------------------------------------------------------------------------
+server.tool(
+  'delete_expense_receipt',
+  'Delete the receipt image attached to a financial transaction.',
+  { transactionId: z.string().describe('The transaction ID whose receipt should be removed') },
+  async ({ transactionId }) => runTool(() =>
+    daybookFetch(`/api/expenses/${transactionId}/receipt`, { method: 'DELETE' }),
   ),
 );
 
