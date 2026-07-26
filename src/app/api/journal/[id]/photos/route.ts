@@ -16,11 +16,15 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const t0 = Date.now();
+  console.log(`[${new Date().toISOString()}] [journal photos POST] request received`);
+
   const hdrs = await headers();
   const apiKeySession = await validateApiKey(hdrs.get('authorization'));
   const userId =
     apiKeySession?.userId ?? (await requireSession()).session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  console.log(`[journal photos POST] auth resolved after ${Date.now() - t0}ms`);
 
   const { id: entryId } = await params;
 
@@ -29,6 +33,7 @@ export async function POST(
     where: and(eq(journalEntries.id, entryId), eq(journalEntries.userId, userId)),
   });
   if (!entry) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  console.log(`[journal photos POST] entry lookup done after ${Date.now() - t0}ms`);
 
   let formData: FormData;
   try {
@@ -36,6 +41,7 @@ export async function POST(
   } catch {
     return NextResponse.json({ error: 'Invalid form data' }, { status: 400 });
   }
+  console.log(`[journal photos POST] formData parsed after ${Date.now() - t0}ms`);
 
   const files = formData.getAll('photos') as File[];
   if (!files.length) {
@@ -102,6 +108,7 @@ export async function POST(
     created.push(photo);
   }
 
+  console.log(`[journal photos POST] complete after ${Date.now() - t0}ms total`);
   return NextResponse.json(created, { status: 201 });
 }
 

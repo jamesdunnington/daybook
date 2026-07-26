@@ -17,10 +17,14 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const t0 = Date.now();
+  console.log(`[${new Date().toISOString()}] [expense receipt POST] request received`);
+
   const hdrs = await headers();
   const apiKeySession = await validateApiKey(hdrs.get('authorization'));
   const userId = apiKeySession?.userId ?? (await requireSession()).session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  console.log(`[expense receipt POST] auth resolved after ${Date.now() - t0}ms`);
 
   const { id } = await params;
 
@@ -31,6 +35,7 @@ export async function POST(
     .limit(1);
 
   if (!existing.length) return NextResponse.json({ error: 'Transaction not found' }, { status: 404 });
+  console.log(`[expense receipt POST] transaction lookup done after ${Date.now() - t0}ms`);
 
   let formData: FormData;
   try {
@@ -38,6 +43,7 @@ export async function POST(
   } catch {
     return NextResponse.json({ error: 'Invalid form data' }, { status: 400 });
   }
+  console.log(`[expense receipt POST] formData parsed after ${Date.now() - t0}ms`);
 
   const file = formData.get('receipt') as File | null;
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -73,6 +79,7 @@ export async function POST(
     .where(and(eq(expenseTransactions.id, id), eq(expenseTransactions.userId, userId)))
     .returning();
 
+  console.log(`[expense receipt POST] complete after ${Date.now() - t0}ms total`);
   return NextResponse.json({ receiptUrl: updated.receiptUrl }, { status: 201 });
 }
 

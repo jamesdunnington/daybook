@@ -23,6 +23,11 @@ const AUTH_STORE_PATH = process.env.MCP_DATA_DIR
 const REQUEST_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 60_000;
 
+// Timestamped debug logger for diagnosing upload latency — remove once resolved.
+function dlog(msg: string): void {
+  console.log(`[${new Date().toISOString()}] ${msg}`);
+}
+
 // ---------------------------------------------------------------------------
 // Helper: authenticated fetch against the Daybook REST API
 // ---------------------------------------------------------------------------
@@ -52,12 +57,14 @@ async function daybookFetch(path: string, options?: RequestInit): Promise<unknow
 // ---------------------------------------------------------------------------
 async function daybookUpload(path: string, form: FormData): Promise<unknown> {
   const url = `${DAYBOOK_API_URL}${path}`;
+  const t0 = Date.now();
   const res = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${DAYBOOK_API_KEY}` },
     body: form,
     signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
   });
+  dlog(`[daybookUpload] ${path} fetch took ${Date.now() - t0}ms, status ${res.status}`);
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
   }
@@ -523,6 +530,9 @@ server.tool(
       .describe('Array of images to upload (multiple photos can be attached in one call)'),
   },
   async ({ entryId, images }) => runTool(async () => {
+    const tHandlerStart = Date.now();
+    const totalBase64Chars = images.reduce((n, img) => n + img.data.length, 0);
+    dlog(`[upload_journal_photo] handler entered, ${images.length} image(s), ${totalBase64Chars} base64 chars`);
     const form = new FormData();
     for (const img of images) {
       const mimeType = img.mimeType ?? guessMimeType(img.filename) ?? 'image/jpeg';
@@ -530,7 +540,10 @@ server.tool(
       const blob = new Blob([Buffer.from(img.data, 'base64')], { type: mimeType });
       form.append('photos', blob, filename);
     }
-    return daybookUpload(`/api/journal/${entryId}/photos`, form);
+    dlog(`[upload_journal_photo] form built after ${Date.now() - tHandlerStart}ms, calling daybookUpload`);
+    const result = await daybookUpload(`/api/journal/${entryId}/photos`, form);
+    dlog(`[upload_journal_photo] handler complete after ${Date.now() - tHandlerStart}ms total`);
+    return result;
   }),
 );
 
@@ -562,11 +575,16 @@ server.tool(
     mimeType: z.string().optional().describe("MIME type, e.g. 'image/jpeg'; inferred from filename if omitted, defaults to image/jpeg"),
   },
   async ({ transactionId, data, filename, mimeType }) => runTool(async () => {
+    const tHandlerStart = Date.now();
+    dlog(`[upload_expense_receipt] handler entered, ${data.length} base64 chars`);
     const mt = mimeType ?? guessMimeType(filename) ?? 'image/jpeg';
     const fname = filename ?? `receipt.${extForMime(mt)}`;
     const form = new FormData();
     form.append('receipt', new Blob([Buffer.from(data, 'base64')], { type: mt }), fname);
-    return daybookUpload(`/api/expenses/${transactionId}/receipt`, form);
+    dlog(`[upload_expense_receipt] form built after ${Date.now() - tHandlerStart}ms, calling daybookUpload`);
+    const result = await daybookUpload(`/api/expenses/${transactionId}/receipt`, form);
+    dlog(`[upload_expense_receipt] handler complete after ${Date.now() - tHandlerStart}ms total`);
+    return result;
   }),
 );
 
@@ -920,6 +938,9 @@ app.get('/sse', requireBearerAuth({ verifier: authProvider, resourceMetadataUrl 
 
 // Message endpoint — client POSTs tool calls here, keyed by sessionId
 app.post('/messages', requireBearerAuth({ verifier: authProvider, resourceMetadataUrl }), async (req, res) => {
+  const tReceived = Date.now();
+  const bodyBytes = req.headers['content-length'] ?? 'unknown';
+  dlog(`[/messages] request received, content-length=${bodyBytes}`);
   const sessionId = req.query.sessionId as string;
   const transport = sessions.get(sessionId);
   if (!transport) {
@@ -927,6 +948,7 @@ app.post('/messages', requireBearerAuth({ verifier: authProvider, resourceMetada
     return;
   }
   await transport.handlePostMessage(req, res, req.body);
+  dlog(`[/messages] handlePostMessage returned after ${Date.now() - tReceived}ms`);
 });
 
 app.listen(PORT, () => {
