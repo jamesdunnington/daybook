@@ -477,6 +477,7 @@ function EntryDetailSheet({
   const [editContent, setEditContent] = useState('');
   const [editMood, setEditMood] = useState('');
   const [editTags, setEditTags] = useState('');
+  const [previewPhoto, setPreviewPhoto] = useState<JournalPhoto | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: entry, isLoading } = useQuery({
@@ -609,7 +610,8 @@ function EntryDetailSheet({
                             <img
                               src={`/api/uploads/journal/${photo.userId}/${photo.filename}`}
                               alt={photo.originalName}
-                              className="object-cover w-full h-full"
+                              className="object-cover w-full h-full cursor-pointer"
+                              onClick={() => setPreviewPhoto(photo)}
                             />
                             <button
                               type="button"
@@ -740,6 +742,20 @@ function EntryDetailSheet({
           </>
         )}
       </SheetContent>
+
+      <Dialog open={!!previewPhoto} onOpenChange={(o) => { if (!o) setPreviewPhoto(null); }}>
+        <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-3xl p-2 bg-transparent ring-0 shadow-none">
+          <DialogTitle className="sr-only">{previewPhoto?.originalName ?? 'Photo preview'}</DialogTitle>
+          {previewPhoto && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/uploads/journal/${previewPhoto.userId}/${previewPhoto.filename}`}
+              alt={previewPhoto.originalName}
+              className="w-full h-auto max-h-[85vh] object-contain rounded-lg mx-auto"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
