@@ -20,6 +20,9 @@ const AUTH_STORE_PATH = process.env.MCP_DATA_DIR
   ? `${process.env.MCP_DATA_DIR}/auth-store.json`
   : '/app/data/auth-store.json';
 
+const REQUEST_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 60_000;
+
 // ---------------------------------------------------------------------------
 // Helper: authenticated fetch against the Daybook REST API
 // ---------------------------------------------------------------------------
@@ -32,6 +35,7 @@ async function daybookFetch(path: string, options?: RequestInit): Promise<unknow
       'Content-Type': 'application/json',
       ...options?.headers,
     },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
@@ -52,6 +56,7 @@ async function daybookUpload(path: string, form: FormData): Promise<unknown> {
     method: 'POST',
     headers: { Authorization: `Bearer ${DAYBOOK_API_KEY}` },
     body: form,
+    signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
@@ -889,7 +894,10 @@ const authProvider = new DaybookAuthProvider();
 const issuerUrl = new URL(MCP_SERVER_URL);
 
 const app = express();
-app.use(express.json());
+// Default body-parser limit (100kb) is too small for base64-encoded image
+// tool-call arguments (upload_journal_photo / upload_expense_receipt); raise
+// it to cover the API's 10MB file cap plus base64 + JSON-RPC overhead.
+app.use(express.json({ limit: '15mb' }));
 
 // OAuth discovery + token + registration endpoints
 app.use(mcpAuthRouter({ provider: authProvider, issuerUrl, scopesSupported: [] }));
