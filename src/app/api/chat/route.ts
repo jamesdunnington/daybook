@@ -5,6 +5,7 @@ import { validateApiKey } from '@/lib/auth/api-key';
 import { db } from '@/lib/db';
 import { aiConversations } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { getPreferredModel } from '@/lib/ai/openrouter';
 
 async function getUserId() {
   const hdrs = await headers();
@@ -30,12 +31,13 @@ export async function POST(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
+  const model = typeof body.model === 'string' && body.model.trim() ? body.model : await getPreferredModel(userId);
   const [conv] = await db
     .insert(aiConversations)
     .values({
       userId,
       title: body.title ?? 'New Chat',
-      model: body.model ?? 'openai/gpt-4o-mini',
+      model,
     })
     .returning();
 

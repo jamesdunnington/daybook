@@ -17,11 +17,12 @@ export async function GET(req: NextRequest) {
   const month = searchParams.get('month'); // YYYY-MM
   const tag = searchParams.get('tag');
   const search = searchParams.get('search')?.trim();
+  const all = searchParams.get('all') === 'true';
 
   const conditions = [eq(journalEntries.userId, userId)];
 
-  // A text search looks across all time; otherwise fall back to month scoping.
-  if (month && !search) {
+  // A text search or an explicit "all" view looks across all time; otherwise fall back to month scoping.
+  if (month && !search && !all) {
     const [year, mon] = month.split('-').map(Number);
     const start = new Date(year, mon - 1, 1);
     const end = new Date(year, mon, 1);

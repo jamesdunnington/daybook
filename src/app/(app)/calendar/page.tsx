@@ -59,9 +59,10 @@ const PRESET_COLORS = [
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-async function fetchEvents(start: Date, end: Date, search?: string): Promise<CalendarEvent[]> {
+async function fetchEvents(start: Date, end: Date, search?: string, all?: boolean): Promise<CalendarEvent[]> {
   const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
   if (search) params.set('search', search);
+  if (all) params.set('all', 'true');
   const res = await fetch(`/api/calendar?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch events');
   return res.json();
@@ -670,14 +671,15 @@ export default function CalendarPage() {
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [search, setSearch] = useState('');
-  const isSearching = search.trim().length > 0;
+  const [viewAll, setViewAll] = useState(false);
+  const isSearching = search.trim().length > 0 || viewAll;
 
   const rangeStart = startOfWeek(startOfMonth(currentMonth));
   const rangeEnd = endOfWeek(endOfMonth(currentMonth));
 
   const { data: events = [], isLoading } = useQuery({
-    queryKey: ['calendar-events', format(currentMonth, 'yyyy-MM'), search],
-    queryFn: () => fetchEvents(rangeStart, rangeEnd, search || undefined),
+    queryKey: ['calendar-events', format(currentMonth, 'yyyy-MM'), search, viewAll],
+    queryFn: () => fetchEvents(rangeStart, rangeEnd, search || undefined, viewAll),
   });
 
   const sortedSearchResults = useMemo(
@@ -789,6 +791,16 @@ export default function CalendarPage() {
         />
       </div>
 
+      <div className="mb-4">
+        <Button
+          variant={viewAll ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setViewAll((v) => !v)}
+        >
+          {viewAll ? 'Showing every event' : 'View all events'}
+        </Button>
+      </div>
+
       {/* Month name for mobile */}
       <h2 className="text-lg font-semibold mb-3 md:hidden text-center">
         {format(currentMonth, 'MMMM yyyy')}
@@ -796,7 +808,9 @@ export default function CalendarPage() {
 
       {isSearching ? (
         sortedSearchResults.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">{`No events match "${search}".`}</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">
+            {search.trim() ? `No events match "${search}".` : 'No events yet.'}
+          </p>
         ) : (
           <div className="space-y-1.5">
             {sortedSearchResults.map((event) => (

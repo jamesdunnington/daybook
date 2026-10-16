@@ -17,14 +17,16 @@ export async function GET(req: NextRequest) {
   const startParam = searchParams.get('start');
   const endParam = searchParams.get('end');
   const search = searchParams.get('search')?.trim();
+  const all = searchParams.get('all') === 'true';
+  const unscoped = !!search || all;
 
   const conditions = [eq(calendarEvents.userId, userId)];
-  // A text search looks across all time (and skips recurrence expansion below);
-  // otherwise scope to the given date range.
-  if (!search) {
+  // A text search or an explicit "all" view looks across all time (and skips recurrence
+  // expansion below); otherwise scope to the given date range.
+  if (!unscoped) {
     if (startParam) conditions.push(gte(calendarEvents.startAt, new Date(startParam)));
     if (endParam) conditions.push(lte(calendarEvents.startAt, new Date(endParam)));
-  } else {
+  } else if (search) {
     conditions.push(
       or(ilike(calendarEvents.title, `%${search}%`), ilike(calendarEvents.description, `%${search}%`))!
     );
@@ -35,9 +37,8 @@ export async function GET(req: NextRequest) {
     .from(calendarEvents)
     .where(and(...conditions));
 
-  if (search) {
-    // Skip recurrence expansion for search results — return each matching
-    // event once, at its own base start/end time.
+  if (unscoped) {
+    // Skip recurrence expansion — return each matching event once, at its own base start/end time.
     return NextResponse.json(rows.map((event) => ({ ...event, instanceDate: event.startAt.toISOString() })));
   }
 

@@ -81,9 +81,10 @@ function getMoodEmoji(mood: string | null): string {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-async function fetchEntries(month: string, search?: string): Promise<JournalEntry[]> {
+async function fetchEntries(month: string, search?: string, all?: boolean): Promise<JournalEntry[]> {
   const params = new URLSearchParams({ month });
   if (search) params.set('search', search);
+  if (all) params.set('all', 'true');
   const res = await fetch(`/api/journal?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to load entries');
   return res.json();
@@ -771,13 +772,14 @@ export default function JournalPage() {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [viewAll, setViewAll] = useState(false);
 
   const monthKey = format(currentMonth, 'yyyy-MM');
-  const isSearching = search.trim().length > 0;
+  const isSearching = search.trim().length > 0 || viewAll;
 
   const { data: entries = [], isLoading } = useQuery<JournalEntry[]>({
-    queryKey: ['journal', monthKey, search],
-    queryFn: () => fetchEntries(monthKey, search || undefined),
+    queryKey: ['journal', monthKey, search, viewAll],
+    queryFn: () => fetchEntries(monthKey, search || undefined, viewAll),
   });
 
   const queryClient = useQueryClient();
@@ -831,6 +833,15 @@ export default function JournalPage() {
             }}
           />
         </div>
+
+        <Button
+          variant={viewAll ? 'default' : 'outline'}
+          size="sm"
+          className="w-full"
+          onClick={() => setViewAll((v) => !v)}
+        >
+          {viewAll ? 'Showing every entry' : 'View all entries'}
+        </Button>
 
         {/* Month navigation — click the label to jump directly to any month/year */}
         <div className="flex items-center justify-between">
@@ -905,7 +916,9 @@ export default function JournalPage() {
             <BookOpenIcon className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-muted-foreground text-sm">
               {isSearching
-                ? `No entries match "${search}".`
+                ? search.trim()
+                  ? `No entries match "${search}".`
+                  : 'No journal entries yet.'
                 : selectedDate
                   ? 'No entry for this day. Start writing!'
                   : 'No entries this month yet.'}

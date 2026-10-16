@@ -85,11 +85,13 @@ async function fetchConversations(): Promise<Conversation[]> {
   return res.json();
 }
 
-async function createConversation(title: string, model = 'gpt-4o'): Promise<Conversation> {
+async function createConversation(title: string): Promise<Conversation> {
+  // No model is sent here on purpose — the server defaults new conversations to the
+  // user's actual preferred model from Settings (see /api/chat POST).
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, model }),
+    body: JSON.stringify({ title }),
   });
   if (!res.ok) throw new Error('Failed to create conversation');
   return res.json();
