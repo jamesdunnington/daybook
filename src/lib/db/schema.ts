@@ -8,6 +8,7 @@ import {
   uuid,
   jsonb,
   index,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 // ─── BETTER AUTH CORE TABLES ─────────────────────────────────────────────────
@@ -321,7 +322,15 @@ export const aiUndoActions = pgTable('ai_undo_actions', {
   undoData: jsonb('undo_data').notNull().$type<
     | {
         kind: 'restore_row';
-        table: 'todos' | 'calendarEvents' | 'journalEntries' | 'expenseTransactions' | 'expenseCategories' | 'todoCategories';
+        table:
+          | 'todos'
+          | 'calendarEvents'
+          | 'journalEntries'
+          | 'expenseTransactions'
+          | 'expenseCategories'
+          | 'todoCategories'
+          | 'projects'
+          | 'projectMilestones';
         row: Record<string, unknown>;
       }
     | { kind: 'delete_rows_by_batch'; importBatchId: string }
@@ -330,6 +339,88 @@ export const aiUndoActions = pgTable('ai_undo_actions', {
   undoneAt: timestamp('undone_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// ─── POWER TAB (PROJECTS) ─────────────────────────────────────────────────────
+
+export const projects = pgTable('projects', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  status: text('status').notNull().default('active'),
+  color: text('color').default('#0D9488'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const projectPages = pgTable(
+  'project_pages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    parentId: uuid('parent_id').references((): AnyPgColumn => projectPages.id, {
+      onDelete: 'cascade',
+    }),
+    title: text('title').notNull().default('Untitled'),
+    content: jsonb('content').$type<unknown[]>().default([]),
+    position: integer('position').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('project_pages_project_idx').on(t.projectId)]
+);
+
+export const projectMilestones = pgTable(
+  'project_milestones',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    unitLabel: text('unit_label').notNull().default('items'),
+    targetCount: numeric('target_count', { precision: 12, scale: 2 }).notNull(),
+    targetDate: timestamp('target_date'),
+    status: text('status').notNull().default('active'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('project_milestones_project_idx').on(t.projectId)]
+);
+
+export const projectActivityLog = pgTable(
+  'project_activity_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    milestoneId: uuid('milestone_id').references(() => projectMilestones.id, {
+      onDelete: 'set null',
+    }),
+    countValue: numeric('count_value', { precision: 12, scale: 2 }).notNull().default('1'),
+    entryDate: timestamp('entry_date').notNull().defaultNow(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('project_activity_log_project_idx').on(t.projectId, t.entryDate),
+    index('project_activity_log_milestone_idx').on(t.milestoneId),
+  ]
+);
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 
@@ -362,3 +453,7 @@ export type ExpenseTransaction = typeof expenseTransactions.$inferSelect;
 export type AiConversation = typeof aiConversations.$inferSelect;
 export type AiMessage = typeof aiMessages.$inferSelect;
 export type AiUndoAction = typeof aiUndoActions.$inferSelect;
+export type Project = typeof projects.$inferSelect;
+export type ProjectPage = typeof projectPages.$inferSelect;
+export type ProjectMilestone = typeof projectMilestones.$inferSelect;
+export type ProjectActivityLogEntry = typeof projectActivityLog.$inferSelect;

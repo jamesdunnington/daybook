@@ -11,6 +11,7 @@ import {
   Shield,
   LayoutDashboard,
   LogOut,
+  Blocks,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { signOut, useSession } from '@/lib/auth/client';
@@ -25,6 +26,7 @@ const navItems = [
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/expenses', label: 'Expenses', icon: DollarSign },
   { href: '/chat', label: 'AI Chat', icon: MessageSquare },
+  { href: '/power-tab', label: 'Power Tab', icon: Blocks },
 ];
 
 export function Sidebar() {

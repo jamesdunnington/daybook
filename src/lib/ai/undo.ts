@@ -3,7 +3,7 @@
 // confirmation gate, but destructive/bulk ones stay revertible for a short window.
 
 import { db } from '@/lib/db';
-import { aiUndoActions, todos, calendarEvents, journalEntries, expenseTransactions, expenseCategories, todoCategories } from '@/lib/db/schema';
+import { aiUndoActions, todos, calendarEvents, journalEntries, expenseTransactions, expenseCategories, todoCategories, projects, projectMilestones } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import type { AiUndoAction } from '@/lib/db/schema';
 
@@ -40,6 +40,8 @@ const TABLES = {
   expenseTransactions,
   expenseCategories,
   todoCategories,
+  projects,
+  projectMilestones,
 } as const;
 
 export async function applyUndo(id: string, userId: string): Promise<{ summary: string }> {

@@ -666,6 +666,227 @@ define(
   }
 );
 
+// ─── Power Tab (projects) ───────────────────────────────────────────────────
+
+// Flattens a BlockNote document (array of blocks, each possibly with nested
+// `children`) into plain text — chat reads/writes pages as text, never raw
+// block JSON (see design doc: docs/superpowers/specs/2026-10-16-power-tab-design.md).
+function blocksToText(blocks: unknown): string {
+  if (!Array.isArray(blocks)) return '';
+  const lines: string[] = [];
+  const visit = (block: Record<string, unknown>, depth: number) => {
+    const content = Array.isArray(block.content) ? block.content : [];
+    const text = content
+      .map((c) => (c && typeof c === 'object' && 'text' in c ? String((c as { text: unknown }).text) : ''))
+      .join('');
+    const prefix = block.type === 'checkListItem' ? (block.props as { checked?: boolean } | undefined)?.checked ? '[x] ' : '[ ] ' : '';
+    if (text.trim() || prefix) lines.push('  '.repeat(depth) + prefix + text);
+    if (Array.isArray(block.children)) {
+      for (const child of block.children) visit(child as Record<string, unknown>, depth + 1);
+    }
+  };
+  for (const block of blocks) visit(block as Record<string, unknown>, 0);
+  return lines.join('\n');
+}
+
+function newParagraphBlock(text: string) {
+  return {
+    id: randomUUID(),
+    type: 'paragraph',
+    props: { textColor: 'default', backgroundColor: 'default', textAlignment: 'left' },
+    content: [{ type: 'text', text, styles: {} }],
+    children: [],
+  };
+}
+
+define(
+  'list_projects',
+  'List all Power Tab projects.',
+  { properties: {} },
+  async (_args, ctx) => ({
+    output: await internalFetch(ctx.origin, ctx.cookieHeader, '/api/power-tab/projects'),
+    summary: 'Listed projects',
+  })
+);
+
+define(
+  'create_project',
+  'Create a new Power Tab project (e.g. one per website you manage).',
+  { properties: { name: { type: 'string' }, description: { type: 'string' }, color: { type: 'string' } }, required: ['name'] },
+  async (args, ctx) => {
+    const output = await internalFetch(ctx.origin, ctx.cookieHeader, '/api/power-tab/projects', {
+      method: 'POST',
+      body: JSON.stringify(args),
+    });
+    return { output, summary: `Created project "${args.name}"` };
+  }
+);
+
+define(
+  'log_project_activity',
+  'Add a dated activity-log entry to a project — use this whenever the user mentions doing work on a project ' +
+  '(e.g. "expanded article X", "ran an audit"). Optionally link it to a milestone with a count so progress tracks it.',
+  {
+    properties: {
+      projectId: { type: 'string' },
+      content: { type: 'string', description: 'What was done' },
+      entryDate: { type: 'string', description: 'YYYY-MM-DD, defaults to today' },
+      milestoneId: { type: 'string', description: 'Optional milestone this counts toward' },
+      countValue: { type: 'number', description: 'How much this entry counts toward the milestone (default 1)' },
+    },
+    required: ['projectId', 'content'],
+  },
+  async (args, ctx) => {
+    const { projectId, ...body } = args;
+    const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/log`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return { output, summary: `Logged activity: "${args.content}"` };
+  }
+);
+
+define(
+  'list_project_activity',
+  'List the dated activity-log entries for a project.',
+  { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+  async (args, ctx) => ({
+    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/log`),
+    summary: 'Listed project activity',
+  })
+);
+
+define(
+  'create_milestone',
+  'Create a milestone for a project — a target count (e.g. 50 articles) with an optional due date. Progress and ' +
+  'a pace-based forecast are computed automatically from linked activity-log entries.',
+  {
+    properties: {
+      projectId: { type: 'string' },
+      title: { type: 'string' },
+      unitLabel: { type: 'string', description: "e.g. 'articles'" },
+      targetCount: { type: 'number' },
+      targetDate: { type: 'string', description: 'Optional YYYY-MM-DD' },
+    },
+    required: ['projectId', 'title', 'targetCount'],
+  },
+  async (args, ctx) => {
+    const { projectId, ...body } = args;
+    const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/milestones`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return { output, summary: `Created milestone "${args.title}"` };
+  }
+);
+
+define(
+  'list_project_milestones',
+  'List milestones for a project, each with computed progress and a pace-based forecast finish date.',
+  { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+  async (args, ctx) => ({
+    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/milestones`),
+    summary: 'Listed milestones',
+  })
+);
+
+define(
+  'list_project_pages',
+  "List a project's page tree (titles and IDs only).",
+  { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+  async (args, ctx) => ({
+    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/pages`),
+    summary: 'Listed project pages',
+  })
+);
+
+define(
+  'read_project_page',
+  'Read a project page as plain text (not raw block data).',
+  { properties: { pageId: { type: 'string' } }, required: ['pageId'] },
+  async (args, ctx) => {
+    const page = (await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/pages/${args.pageId}`)) as {
+      title: string;
+      content: unknown;
+    };
+    return { output: { title: page.title, text: blocksToText(page.content) }, summary: `Read page "${page.title}"` };
+  }
+);
+
+define(
+  'create_project_page',
+  'Create a new page in a project (optionally nested under a parent page).',
+  {
+    properties: {
+      projectId: { type: 'string' },
+      title: { type: 'string' },
+      parentId: { type: 'string', description: 'Optional parent page ID to nest under' },
+      initialText: { type: 'string', description: 'Optional first paragraph of text' },
+    },
+    required: ['projectId', 'title'],
+  },
+  async (args, ctx) => {
+    const body = {
+      title: args.title,
+      parentId: args.parentId ?? null,
+      content: args.initialText ? [newParagraphBlock(String(args.initialText))] : [],
+    };
+    const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/pages`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return { output, summary: `Created page "${args.title}"` };
+  }
+);
+
+define(
+  'append_to_project_page',
+  'Append a paragraph of text to an existing project page.',
+  { properties: { pageId: { type: 'string' }, text: { type: 'string' } }, required: ['pageId', 'text'] },
+  async (args, ctx) => {
+    const page = (await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/pages/${args.pageId}`)) as {
+      content: unknown[];
+    };
+    const content = [...(Array.isArray(page.content) ? page.content : []), newParagraphBlock(String(args.text))];
+    const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/pages/${args.pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+    return { output, summary: 'Appended text to page' };
+  }
+);
+
+define(
+  'get_project_report',
+  'Assemble a full report for a project — recent activity, milestone progress/forecasts, and page summaries — ' +
+  'for you to turn into a written analysis when the user asks how a project is going.',
+  { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+  async (args, ctx) => {
+    const [project, log, milestones, pages] = await Promise.all([
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}`),
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/log`),
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/milestones`),
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/pages`),
+    ]);
+    return {
+      output: { project, recentActivity: (log as unknown[]).slice(0, 30), milestones, pages },
+      summary: 'Assembled project report',
+    };
+  }
+);
+
+define(
+  'delete_project',
+  'Delete a Power Tab project and everything in it (pages, log, milestones).',
+  { properties: { id: { type: 'string' } }, required: ['id'] },
+  async (args, ctx) => {
+    const result = (await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.id}`, {
+      method: 'DELETE',
+    })) as { undoId?: string; undoExpiresAt?: string };
+    return { output: result, summary: 'Deleted project', undoId: result.undoId, undoExpiresAt: result.undoExpiresAt };
+  }
+);
+
 // ─── Exports ────────────────────────────────────────────────────────────────
 
 export const TOOL_SPECS: ToolSpec[] = specs;
