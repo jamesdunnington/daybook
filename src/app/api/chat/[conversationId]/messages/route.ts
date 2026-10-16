@@ -190,8 +190,13 @@ export async function POST(
   }
 
   // ── Tool-calling loop: auto-executes every tool call, no confirmation gate ──
+  // Call the app's own API via loopback, not the public origin (req.nextUrl.origin) —
+  // self-fetching the public domain from inside the same container routinely fails
+  // behind a reverse proxy (hairpin NAT / firewall rules that don't allow a container
+  // to reach its own public IP).
+  const internalOrigin = `http://127.0.0.1:${process.env.PORT ?? 3000}`;
   const ctx: ToolCtx = {
-    origin: req.nextUrl.origin,
+    origin: internalOrigin,
     cookieHeader: req.headers.get('cookie') ?? '',
     userId,
     conversationId,

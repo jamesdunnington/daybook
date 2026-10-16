@@ -32,7 +32,13 @@ export const auth = betterAuth({
       maxAge: 60 * 5,
     },
   },
-  trustedOrigins: [process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'],
+  trustedOrigins: [
+    process.env.BETTER_AUTH_URL ?? 'http://localhost:3000',
+    // The chat tool-calling loop fetches the app's own API via loopback (not the
+    // public origin) from inside the same container — see messages/route.ts.
+    `http://127.0.0.1:${process.env.PORT ?? 3000}`,
+    `http://localhost:${process.env.PORT ?? 3000}`,
+  ],
 });
 
 export type Auth = typeof auth;
