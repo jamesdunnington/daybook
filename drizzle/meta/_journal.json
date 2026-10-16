@@ -15,6 +15,13 @@
       "when": 1751500000000,
       "tag": "0001_add_receipt_url",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792111140023,
+      "tag": "0002_groovy_captain_cross",
+      "breakpoints": true
     }
   ]
 }

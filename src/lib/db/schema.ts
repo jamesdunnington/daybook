@@ -276,11 +276,28 @@ export const aiMessages = pgTable(
     role: text('role').notNull(),
     content: text('content').notNull(),
     attachments: jsonb('attachments').$type<
+      Array<
+        | {
+            filename: string;
+            type: 'csv' | 'xlsx';
+            parsedRowCount: number;
+            importBatchId: string;
+          }
+        | {
+            filename: string;
+            type: 'image';
+            mimeType: string;
+            uploadId: string;
+            url: string;
+          }
+      >
+    >(),
+    toolCalls: jsonb('tool_calls').$type<
       Array<{
-        filename: string;
-        type: 'csv' | 'xlsx';
-        parsedRowCount: number;
-        importBatchId: string;
+        name: string;
+        summary: string;
+        undoId?: string;
+        undoExpiresAt?: string;
       }>
     >(),
     tokenCount: integer('token_count'),
@@ -288,6 +305,31 @@ export const aiMessages = pgTable(
   },
   (t) => [index('ai_messages_conv_idx').on(t.conversationId)]
 );
+
+// ─── AI TOOL UNDO LOG ─────────────────────────────────────────────────────────
+
+export const aiUndoActions = pgTable('ai_undo_actions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  conversationId: uuid('conversation_id').references(() => aiConversations.id, {
+    onDelete: 'cascade',
+  }),
+  toolName: text('tool_name').notNull(),
+  summary: text('summary').notNull(),
+  undoData: jsonb('undo_data').notNull().$type<
+    | {
+        kind: 'restore_row';
+        table: 'todos' | 'calendarEvents' | 'journalEntries' | 'expenseTransactions' | 'expenseCategories' | 'todoCategories';
+        row: Record<string, unknown>;
+      }
+    | { kind: 'delete_rows_by_batch'; importBatchId: string }
+  >(),
+  expiresAt: timestamp('expires_at').notNull(),
+  undoneAt: timestamp('undone_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 
@@ -319,3 +361,4 @@ export type ExpenseCategory = typeof expenseCategories.$inferSelect;
 export type ExpenseTransaction = typeof expenseTransactions.$inferSelect;
 export type AiConversation = typeof aiConversations.$inferSelect;
 export type AiMessage = typeof aiMessages.$inferSelect;
+export type AiUndoAction = typeof aiUndoActions.$inferSelect;

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Send, Paperclip, Plus, Trash2, MessageSquare, Bot, User, ChevronLeft } from 'lucide-react';
+import { Send, Paperclip, Plus, Trash2, MessageSquare, Bot, User, ChevronLeft, X, RotateCcw, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -14,6 +14,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { ModelPicker } from '@/components/chat/model-picker';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,11 +25,34 @@ interface Conversation {
   updatedAt: string;
 }
 
+interface MessageAttachment {
+  filename: string;
+  type: 'csv' | 'xlsx' | 'image';
+  url?: string;
+}
+
+interface ToolCallEntry {
+  name: string;
+  summary: string;
+  undoId?: string;
+  undoExpiresAt?: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   createdAt?: string;
+  attachments?: MessageAttachment[];
+  toolCalls?: ToolCallEntry[];
+}
+
+interface PendingImage {
+  uploadId: string;
+  filename: string;
+  storedFilename: string;
+  mimeType: string;
+  url: string;
 }
 
 interface ConversationDetail {
@@ -167,7 +191,37 @@ function ConversationItem({
 
 // ─── Message bubble ────────────────────────────────────────────────────────────
 
-function MessageBubble({ message }: { message: Message }) {
+function ToolCallLog({ calls, onUndo }: { calls: ToolCallEntry[]; onUndo: (id: string) => void }) {
+  const [undone, setUndone] = useState<Set<string>>(new Set());
+
+  return (
+    <ul className="mt-2 space-y-1 border-t border-border/50 pt-2">
+      {calls.map((call, i) => {
+        const canUndo = call.undoId && !undone.has(call.undoId) && call.undoExpiresAt && new Date(call.undoExpiresAt) > new Date();
+        return (
+          <li key={i} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="truncate">✓ {call.summary}</span>
+            {canUndo && (
+              <button
+                type="button"
+                className="shrink-0 flex items-center gap-1 rounded px-1.5 py-0.5 text-primary hover:bg-primary/10"
+                onClick={() => {
+                  onUndo(call.undoId!);
+                  setUndone((prev) => new Set(prev).add(call.undoId!));
+                }}
+              >
+                <RotateCcw className="size-3" />
+                Undo
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function MessageBubble({ message, onUndo }: { message: Message; onUndo: (id: string) => void }) {
   const isUser = message.role === 'user';
 
   return (
@@ -189,7 +243,18 @@ function MessageBubble({ message }: { message: Message }) {
             : 'bg-muted text-foreground rounded-tl-sm border border-border/50'
         }`}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {message.attachments?.some((a) => a.type === 'image') && (
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            {message.attachments
+              .filter((a) => a.type === 'image' && a.url)
+              .map((a, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} src={a.url} alt={a.filename} className="h-24 w-24 rounded-lg border border-border/50 object-cover" />
+              ))}
+          </div>
+        )}
+        {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+        {!isUser && message.toolCalls?.length ? <ToolCallLog calls={message.toolCalls} onUndo={onUndo} /> : null}
       </div>
     </div>
   );
@@ -310,6 +375,7 @@ export default function ChatPage() {
   const [isConfirming, setIsConfirming] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreviewData | null>(null);
   const [convDetail, setConvDetail] = useState<ConversationDetail | null>(null);
+  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
 
   // Conversation list
   const { data: conversations = [] } = useQuery<Conversation[]>({
@@ -365,7 +431,7 @@ export default function ChatPage() {
 
   const handleSend = useCallback(async () => {
     const content = input.trim();
-    if (!content || isStreaming || !selectedConvId) return;
+    if ((!content && !pendingImage) || isStreaming || !selectedConvId) return;
 
     setInput('');
     // Reset textarea height
@@ -373,10 +439,16 @@ export default function ChatPage() {
       textareaRef.current.style.height = 'auto';
     }
 
+    const imageToSend = pendingImage;
+    setPendingImage(null);
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
       content,
+      attachments: imageToSend
+        ? [{ filename: imageToSend.filename, type: 'image', url: imageToSend.url }]
+        : undefined,
     };
     setMessages((prev) => [...prev, userMsg]);
     setIsStreaming(true);
@@ -385,7 +457,7 @@ export default function ChatPage() {
       const response = await fetch(`/api/chat/${selectedConvId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, images: imageToSend ? [imageToSend] : undefined }),
       });
 
       if (!response.ok) {
@@ -395,6 +467,7 @@ export default function ChatPage() {
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let assistantMsg = '';
+      let toolCalls: ToolCallEntry[] | undefined;
 
       setMessages((prev) => [...prev, { id: 'streaming', role: 'assistant', content: '' }]);
 
@@ -407,6 +480,10 @@ export default function ChatPage() {
           if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
           try {
             const data = JSON.parse(line.slice(6));
+            if (data.daybook_meta) {
+              toolCalls = data.daybook_meta.toolCalls;
+              continue;
+            }
             const delta = data.choices?.[0]?.delta?.content ?? '';
             if (delta) {
               assistantMsg += delta;
@@ -420,9 +497,9 @@ export default function ChatPage() {
         }
       }
 
-      // Replace streaming placeholder with final id
+      // Replace streaming placeholder with final id (+ any tool call log)
       setMessages((prev) =>
-        prev.map((m) => (m.id === 'streaming' ? { ...m, id: Date.now().toString() } : m))
+        prev.map((m) => (m.id === 'streaming' ? { ...m, id: Date.now().toString(), toolCalls } : m))
       );
 
       // Refetch to get persisted messages
@@ -437,7 +514,41 @@ export default function ChatPage() {
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, selectedConvId, queryClient]);
+  }, [input, pendingImage, isStreaming, selectedConvId, queryClient]);
+
+  const handleUndo = useCallback(
+    async (undoId: string) => {
+      try {
+        const res = await fetch(`/api/chat/undo/${undoId}`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? 'Undo failed');
+        toast.success(data.summary ?? 'Undone');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Undo failed');
+      }
+    },
+    []
+  );
+
+  const handleModelChange = useCallback(
+    async (model: string) => {
+      if (!selectedConvId) return;
+      try {
+        const res = await fetch(`/api/chat/${selectedConvId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model }),
+        });
+        if (!res.ok) throw new Error('Failed to switch model');
+        const updated = await res.json();
+        setConvDetail((prev) => (prev ? { ...prev, model: updated.model } : prev));
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      } catch {
+        toast.error('Failed to switch model');
+      }
+    },
+    [selectedConvId, queryClient]
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -465,12 +576,12 @@ export default function ChatPage() {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !selectedConvId) return;
-      // Reset input so same file can be re-uploaded
-      e.target.value = '';
+  const uploadFile = useCallback(
+    async (file: File) => {
+      if (!selectedConvId) {
+        toast.error('Select or create a conversation first');
+        return;
+      }
 
       const formData = new FormData();
       formData.append('file', file);
@@ -483,7 +594,11 @@ export default function ChatPage() {
         });
         if (!res.ok) throw new Error('Upload failed');
         const data = await res.json();
-        setImportPreview({ ...data, fileName: file.name });
+        if (data.kind === 'image') {
+          setPendingImage(data as PendingImage);
+        } else {
+          setImportPreview({ ...data, fileName: file.name });
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Upload failed');
       } finally {
@@ -491,6 +606,34 @@ export default function ChatPage() {
       }
     },
     [selectedConvId]
+  );
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      // Reset input so same file can be re-uploaded
+      e.target.value = '';
+      await uploadFile(file);
+    },
+    [uploadFile]
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const imageItem = Array.from(e.clipboardData.items).find((item) => item.type.startsWith('image/'));
+      if (!imageItem) return; // let normal text paste through
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      // Screenshot tools hand the clipboard a blob named "image.png" — give it a real name.
+      const ext = imageItem.type.split('/')[1] || 'png';
+      const named = new File([file], file.name && file.name !== 'image.png' ? file.name : `pasted-screenshot.${ext}`, {
+        type: imageItem.type,
+      });
+      uploadFile(named);
+    },
+    [uploadFile]
   );
 
   const handleConfirmImport = useCallback(async () => {
@@ -536,7 +679,7 @@ export default function ChatPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const canSend = input.trim().length > 0 && !isStreaming && !!selectedConvId;
+  const canSend = (input.trim().length > 0 || !!pendingImage) && !isStreaming && !!selectedConvId;
   const showEmptyState = conversations.length === 0;
 
   return (
@@ -650,9 +793,7 @@ export default function ChatPage() {
                 </h1>
               </div>
               {convDetail?.model && (
-                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  {convDetail.model}
-                </span>
+                <ModelPicker value={convDetail.model} onChange={handleModelChange} className="h-7 text-xs" />
               )}
             </div>
 
@@ -669,7 +810,7 @@ export default function ChatPage() {
                 )}
 
                 {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} />
+                  <MessageBubble key={msg.id} message={msg} onUndo={handleUndo} />
                 ))}
 
                 {isStreaming && messages[messages.length - 1]?.id !== 'streaming' && (
@@ -683,12 +824,26 @@ export default function ChatPage() {
             {/* Input area */}
             <div className="border-t bg-background px-4 py-3">
               <div className="mx-auto max-w-3xl">
+                {pendingImage && (
+                  <div className="mb-2 flex items-center gap-2 rounded-lg border border-border/50 bg-muted/50 px-2.5 py-1.5 text-xs">
+                    <ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="flex-1 truncate">{pendingImage.filename}</span>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={() => setPendingImage(null)}
+                      title="Remove attachment"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-end gap-2 rounded-xl border bg-background px-3 py-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
                   {/* File upload */}
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv,.xlsx"
+                    accept=".csv,.xlsx,.jpg,.jpeg,.png,.webp,.heic,.heif"
                     className="hidden"
                     onChange={handleFileChange}
                   />
@@ -697,7 +852,7 @@ export default function ChatPage() {
                     className="mb-0.5 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                     onClick={handleFileButtonClick}
                     disabled={isUploading || isStreaming}
-                    title="Upload CSV or XLSX"
+                    title="Upload CSV, XLSX, or a photo (e.g. a bank statement)"
                   >
                     {isUploading ? (
                       <span className="flex size-4 items-center justify-center">
@@ -714,7 +869,8 @@ export default function ChatPage() {
                     value={input}
                     onChange={handleTextareaChange}
                     onKeyDown={handleKeyDown}
-                    placeholder="Message… (Enter to send, Shift+Enter for new line)"
+                    onPaste={handlePaste}
+                    placeholder="Message… (Enter to send, Shift+Enter for new line, paste a screenshot)"
                     rows={1}
                     disabled={isStreaming}
                     className="flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"

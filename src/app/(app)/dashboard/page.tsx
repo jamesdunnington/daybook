@@ -23,17 +23,6 @@ function formatCurrency(amount: number, currency = 'USD'): string {
   }).format(amount);
 }
 
-function getMoodEmoji(mood: string | null): string {
-  const map: Record<string, string> = {
-    great: '😄',
-    good: '😊',
-    neutral: '😐',
-    bad: '😕',
-    terrible: '😢',
-  };
-  return mood ? (map[mood] ?? '') : '';
-}
-
 async function getDashboardData(userId: string) {
   const now = new Date();
   const todayStart = startOfDay(now);
@@ -176,6 +165,7 @@ export default async function DashboardPage() {
       icon: TrendingUp,
       href: '/expenses',
       iconColor: netPnl >= 0 ? 'text-emerald-500' : 'text-red-500',
+      valueColor: netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
     },
     {
       title: 'Upcoming Events',
@@ -221,7 +211,7 @@ export default async function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="text-2xl font-bold leading-none">{card.value}</div>
+                <div className={`text-2xl font-bold leading-none ${card.valueColor ?? ''}`}>{card.value}</div>
                 <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
               </CardContent>
             </Card>

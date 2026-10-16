@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ModelPicker } from '@/components/chat/model-picker';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
@@ -32,15 +32,6 @@ interface ApiKey {
   lastUsedAt: string | null;
   createdAt: string;
 }
-
-const MODELS = [
-  'openai/gpt-4o-mini',
-  'openai/gpt-4o',
-  'anthropic/claude-3.5-haiku',
-  'anthropic/claude-3.5-sonnet',
-  'google/gemini-flash-1.5',
-  'meta-llama/llama-3.1-8b-instruct',
-];
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -140,19 +131,11 @@ export default function SettingsPage() {
           </div>
           <div className="space-y-2">
             <Label>AI Model</Label>
-            <Select
-              defaultValue={settings?.preferredModel ?? 'openai/gpt-4o-mini'}
-              onValueChange={(v) => updateSettings.mutate({ preferredModel: v })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MODELS.map((m) => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ModelPicker
+              value={settings?.preferredModel ?? 'openai/gpt-4o-mini'}
+              onChange={(v) => updateSettings.mutate({ preferredModel: v })}
+              className="w-full"
+            />
           </div>
           <div className="flex items-center justify-between">
             <div>

@@ -26,9 +26,26 @@ export async function getPreferredModel(userId: string): Promise<string> {
   return settings?.preferredModel ?? 'openai/gpt-4o-mini';
 }
 
+export type OpenRouterContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export interface OpenRouterToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
 export interface OpenRouterMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | OpenRouterContentPart[] | null;
+  tool_calls?: OpenRouterToolCall[];
+  tool_call_id?: string;
+}
+
+export interface OpenRouterTool {
+  type: 'function';
+  function: { name: string; description: string; parameters: Record<string, unknown> };
 }
 
 export async function streamChatCompletion(params: {
@@ -64,6 +81,16 @@ export async function chatCompletion(params: {
   model: string;
   apiKey: string;
 }): Promise<string> {
+  const message = await chatCompletionMessage(params);
+  return message.content ?? '';
+}
+
+export async function chatCompletionMessage(params: {
+  messages: OpenRouterMessage[];
+  model: string;
+  apiKey: string;
+  tools?: OpenRouterTool[];
+}): Promise<{ content: string | null; tool_calls?: OpenRouterToolCall[] }> {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -75,6 +102,7 @@ export async function chatCompletion(params: {
     body: JSON.stringify({
       model: params.model,
       messages: params.messages,
+      ...(params.tools?.length ? { tools: params.tools } : {}),
     }),
   });
 
@@ -84,5 +112,24 @@ export async function chatCompletion(params: {
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content ?? '';
+  const message = data.choices?.[0]?.message ?? {};
+  return { content: message.content ?? null, tool_calls: message.tool_calls };
+}
+
+/** Wraps already-fetched text as a single-chunk OpenAI-style SSE stream, so callers that
+ * must run a non-streaming tool loop can still hand the client the same SSE shape the
+ * plain streaming path produces. */
+export function textToSSEStream(text: string, meta?: Record<string, unknown>): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      const chunk = { choices: [{ delta: { content: text } }] };
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+      if (meta) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ daybook_meta: meta })}\n\n`));
+      }
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
 }

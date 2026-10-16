@@ -32,6 +32,30 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ conv
   return NextResponse.json({ ...conv, messages });
 }
 
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ conversationId: string }> }) {
+  const userId = await getUserId();
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { conversationId } = await params;
+
+  const conv = await db.query.aiConversations.findFirst({
+    where: and(eq(aiConversations.id, conversationId), eq(aiConversations.userId, userId)),
+  });
+  if (!conv) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  const body = await req.json().catch(() => ({}));
+  const updates: { model?: string; title?: string; updatedAt: Date } = { updatedAt: new Date() };
+  if (typeof body.model === 'string') updates.model = body.model;
+  if (typeof body.title === 'string') updates.title = body.title;
+
+  const [updated] = await db
+    .update(aiConversations)
+    .set(updates)
+    .where(eq(aiConversations.id, conversationId))
+    .returning();
+
+  return NextResponse.json(updated);
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ conversationId: string }> }) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

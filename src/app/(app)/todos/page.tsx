@@ -174,6 +174,7 @@ function ManageCategoriesDialog() {
                   className="h-6 w-6 text-destructive hover:text-destructive"
                   onClick={() => deleteMutation.mutate(cat.id)}
                   disabled={deleteMutation.isPending}
+                  aria-label={`Delete category ${cat.name}`}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
@@ -397,7 +398,16 @@ function EditTodoDialog({ todo, categories }: { todo: Todo; categories: TodoCate
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground transition-colors" />}>
+      <DialogTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={`Edit todo ${todo.title}`}
+          />
+        }
+      >
         <Pencil className="h-3.5 w-3.5" />
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -589,6 +599,7 @@ function TodoItem({
           className="h-7 w-7 text-muted-foreground hover:text-destructive transition-colors"
           onClick={() => deleteMutation.mutate()}
           disabled={deleteMutation.isPending}
+          aria-label={`Delete todo ${todo.title}`}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>

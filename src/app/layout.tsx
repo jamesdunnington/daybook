@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist } from 'next/font/google';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 import { Providers } from '@/components/providers';
 
-const geist = Geist({ subsets: ['latin'], variable: '--font-geist' });
+const fontSans = Plus_Jakarta_Sans({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
   title: 'Daybook',
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#6366f1',
+  themeColor: '#0D9488',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -30,7 +30,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={geist.variable} suppressHydrationWarning>
+    <html lang="en" className={fontSans.variable} suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
         <Providers>
           {children}

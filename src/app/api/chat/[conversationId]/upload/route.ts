@@ -29,14 +29,41 @@ export async function POST(
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
 
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (!['csv', 'xlsx', 'xls'].includes(ext)) {
-    return NextResponse.json({ error: 'Only CSV and XLSX files are supported' }, { status: 400 });
-  }
+  const IMAGE_MIME: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
+  };
 
+  const uploadDir = process.env.UPLOAD_DIR ?? './uploads';
   const buffer = Buffer.from(await file.arrayBuffer());
 
+  // Images (e.g. a bank statement photo) go through the chat tool-calling loop instead
+  // of the CSV/XLSX preview-and-confirm dialog — the model reads the photo directly.
+  if (IMAGE_MIME[ext]) {
+    const imageDir = path.join(uploadDir, 'chat-images', userId);
+    await fs.mkdir(imageDir, { recursive: true });
+    const storedFilename = `${randomUUID()}.${ext}`;
+    await fs.writeFile(path.join(imageDir, storedFilename), buffer);
+
+    return NextResponse.json({
+      kind: 'image',
+      uploadId: randomUUID(),
+      filename: file.name,
+      storedFilename,
+      mimeType: IMAGE_MIME[ext],
+      url: `/api/uploads/chat-images/${userId}/${storedFilename}`,
+    });
+  }
+
+  if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+    return NextResponse.json({ error: 'Only CSV, XLSX, or image files are supported' }, { status: 400 });
+  }
+
   // Save raw file for audit
-  const uploadDir = process.env.UPLOAD_DIR ?? './uploads';
   const importDir = path.join(uploadDir, 'imports', userId);
   await fs.mkdir(importDir, { recursive: true });
   const savedFilename = `${randomUUID()}.${ext}`;
@@ -44,7 +71,7 @@ export async function POST(
 
   let transactions;
   let columnMap;
-  let warnings: string[] = [];
+  const warnings: string[] = [];
 
   if (ext === 'csv') {
     const { headers: cols, rows } = parseCSV(buffer);
@@ -66,6 +93,7 @@ export async function POST(
   const importBatchId = randomUUID();
 
   return NextResponse.json({
+    kind: 'import',
     importBatchId,
     filename: file.name,
     savedAs: savedFilename,
