@@ -14,7 +14,7 @@ import {
   isSameDay,
   parseISO,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, X, ImageIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, ImageIcon, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -81,8 +81,10 @@ function getMoodEmoji(mood: string | null): string {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-async function fetchEntries(month: string): Promise<JournalEntry[]> {
-  const res = await fetch(`/api/journal?month=${month}`);
+async function fetchEntries(month: string, search?: string): Promise<JournalEntry[]> {
+  const params = new URLSearchParams({ month });
+  if (search) params.set('search', search);
+  const res = await fetch(`/api/journal?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to load entries');
   return res.json();
 }
@@ -767,20 +769,26 @@ export default function JournalPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [newEntryOpen, setNewEntryOpen] = useState(false);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
 
   const monthKey = format(currentMonth, 'yyyy-MM');
+  const isSearching = search.trim().length > 0;
 
   const { data: entries = [], isLoading } = useQuery<JournalEntry[]>({
-    queryKey: ['journal', monthKey],
-    queryFn: () => fetchEntries(monthKey),
+    queryKey: ['journal', monthKey, search],
+    queryFn: () => fetchEntries(monthKey, search || undefined),
   });
 
   const queryClient = useQueryClient();
 
-  // Entries filtered by selected date or all entries for the month
-  const displayedEntries = selectedDate
-    ? entries.filter((e) => isSameDay(parseISO(e.entryDate), selectedDate))
-    : entries;
+  // While searching, show every match (across all time) as a flat list.
+  // Otherwise, entries filtered by selected date or all entries for the month.
+  const displayedEntries = isSearching
+    ? entries
+    : selectedDate
+      ? entries.filter((e) => isSameDay(parseISO(e.entryDate), selectedDate))
+      : entries;
 
   function handleMonthPrev() {
     setCurrentMonth((m) => subMonths(m, 1));
@@ -789,6 +797,14 @@ export default function JournalPage() {
 
   function handleMonthNext() {
     setCurrentMonth((m) => addMonths(m, 1));
+    setSelectedDate(null);
+  }
+
+  function handleMonthJump(value: string) {
+    // value is "YYYY-MM" from the native <input type="month">
+    if (!value) return;
+    const [year, mon] = value.split('-').map(Number);
+    setCurrentMonth(new Date(year, mon - 1, 1));
     setSelectedDate(null);
   }
 
@@ -802,9 +818,32 @@ export default function JournalPage() {
     <div className="flex flex-col md:flex-row h-full min-h-0">
       {/* Left panel: calendar + controls */}
       <div className="md:w-72 shrink-0 border-b md:border-b-0 md:border-r p-4 space-y-4">
-        {/* Month navigation */}
+        {/* Search across all entries */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search all entries…"
+            className="pl-8"
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setSearch(e.target.value);
+            }}
+          />
+        </div>
+
+        {/* Month navigation — click the label to jump directly to any month/year */}
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-base">{format(currentMonth, 'MMMM yyyy')}</h2>
+          <label className="relative font-semibold text-base">
+            {format(currentMonth, 'MMMM yyyy')}
+            <input
+              type="month"
+              value={monthKey}
+              onChange={(e) => handleMonthJump(e.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              aria-label="Jump to month and year"
+            />
+          </label>
           <div className="flex gap-1">
             <Button variant="ghost" size="icon-sm" onClick={handleMonthPrev}>
               <ChevronLeft className="h-4 w-4" />
@@ -834,7 +873,9 @@ export default function JournalPage() {
 
         {/* Entry count */}
         <p className="text-xs text-muted-foreground text-center">
-          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} this month
+          {isSearching
+            ? `${entries.length} matching ${entries.length === 1 ? 'entry' : 'entries'}`
+            : `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} this month`}
         </p>
       </div>
 
@@ -863,18 +904,22 @@ export default function JournalPage() {
           <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
             <BookOpenIcon className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-muted-foreground text-sm">
-              {selectedDate
-                ? 'No entry for this day. Start writing!'
-                : 'No entries this month yet.'}
+              {isSearching
+                ? `No entries match "${search}".`
+                : selectedDate
+                  ? 'No entry for this day. Start writing!'
+                  : 'No entries this month yet.'}
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setNewEntryOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-              New Entry
-            </Button>
+            {!isSearching && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNewEntryOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+                New Entry
+              </Button>
+            )}
           </div>
         ) : (
           <ul className="space-y-2">
@@ -887,7 +932,7 @@ export default function JournalPage() {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      {format(parseISO(entry.entryDate), 'MMM d')}
+                      {format(parseISO(entry.entryDate), isSearching ? 'MMM d, yyyy' : 'MMM d')}
                     </span>
                     {entry.mood && (
                       <span className="text-base leading-none">

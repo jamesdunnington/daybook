@@ -330,7 +330,8 @@ export const aiUndoActions = pgTable('ai_undo_actions', {
           | 'expenseCategories'
           | 'todoCategories'
           | 'projects'
-          | 'projectMilestones';
+          | 'projectMilestones'
+          | 'projectPages';
         row: Record<string, unknown>;
       }
     | { kind: 'delete_rows_by_batch'; importBatchId: string }

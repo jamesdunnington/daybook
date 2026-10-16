@@ -99,11 +99,22 @@ export function ModelPicker({
       >
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           {current?.supportsImages && <Eye className="size-3 shrink-0 text-muted-foreground" />}
-          <span className="truncate">{current?.name ?? (isLoading ? 'Loading models…' : value || 'Select a model')}</span>
+          <span className="min-w-0 flex-1 truncate text-left">
+            {current?.name ?? (isLoading ? 'Loading models…' : value || 'Select a model')}
+          </span>
+          {current && !current.supportsTools && (
+            <span
+              className="flex shrink-0 items-center gap-0.5 rounded bg-destructive/10 px-1 py-0.5 text-[10px] text-destructive"
+              title="This model can't use app tools — it can only chat, not act on your data"
+            >
+              <Wrench className="size-2.5" />
+              no actions
+            </span>
+          )}
         </span>
         <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
+      <PopoverContent className="w-96 p-0" align="start">
         <Command shouldFilter>
           <CommandInput placeholder="Search models…" />
           <div className="flex gap-1.5 border-b px-1.5 py-1.5">
@@ -123,13 +134,13 @@ export function ModelPicker({
                   }}
                 >
                   <Check className={cn('size-3.5 shrink-0', value === m.id ? 'opacity-100' : 'opacity-0')} />
-                  <span className="flex w-full min-w-0 items-center justify-between gap-3">
+                  <span className="flex w-full min-w-0 flex-col gap-0.5">
                     <span className="flex min-w-0 items-center gap-1.5">
                       {m.supportsImages && <Eye className="size-3 shrink-0 text-muted-foreground" />}
                       {!m.supportsTools && <Wrench className="size-3 shrink-0 text-muted-foreground/50" />}
-                      <span className="truncate">{m.name}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
                     </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="truncate pl-[18px] text-xs text-muted-foreground">
                       {formatPrice(m.promptPricePerM)} in · {formatPrice(m.completionPricePerM)} out
                     </span>
                   </span>

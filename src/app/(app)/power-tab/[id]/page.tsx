@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
-import { Plus, Trash2, FileText, Target } from 'lucide-react';
+import { Plus, Trash2, FileText, Target, Pencil, Check, X } from 'lucide-react';
+import { undoableDelete } from '@/lib/power-tab/undo-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -70,6 +71,118 @@ const jsonHeaders = { 'Content-Type': 'application/json' };
 
 // ─── Activity tab ───────────────────────────────────────────────────────────
 
+function LogEntryRow({
+  entry,
+  projectId,
+}: {
+  entry: LogEntry;
+  projectId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.content);
+
+  const editMutation = useMutation({
+    mutationFn: () =>
+      fetch(`/api/power-tab/projects/${projectId}/log/${entry.id}`, {
+        method: 'PATCH',
+        headers: jsonHeaders,
+        body: JSON.stringify({ content: draft }),
+      }).then((r) => {
+        if (!r.ok) throw new Error('Failed to update entry');
+        return r.json();
+      }),
+    onSuccess: () => {
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ['power-tab-log', projectId] });
+    },
+    onError: () => toast.error('Failed to update entry'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      fetch(`/api/power-tab/projects/${projectId}/log/${entry.id}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error('Failed to delete entry');
+        return r.json();
+      }),
+    onSuccess: (data: { undoId?: string; undoExpiresAt?: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['power-tab-log', projectId] });
+      undoableDelete('Log entry deleted', data.undoId, data.undoExpiresAt);
+    },
+    onError: () => toast.error('Failed to delete entry'),
+  });
+
+  if (editing) {
+    return (
+      <li className="flex items-center gap-2 rounded-lg border px-3 py-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && draft.trim()) editMutation.mutate();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          autoFocus
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={() => editMutation.mutate()}
+          disabled={!draft.trim() || editMutation.isPending}
+          aria-label="Save edit"
+        >
+          <Check className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          onClick={() => setEditing(false)}
+          aria-label="Cancel edit"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-sm">{entry.content}</p>
+        <p className="text-xs text-muted-foreground">
+          {format(new Date(entry.entryDate), 'MMM d, yyyy')} ·{' '}
+          {formatDistanceToNow(new Date(entry.entryDate), { addSuffix: true })}
+        </p>
+      </div>
+      <div className="flex shrink-0 gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            setDraft(entry.content);
+            setEditing(true);
+          }}
+          aria-label={`Edit log entry: ${entry.content}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          onClick={() => deleteMutation.mutate()}
+          aria-label={`Delete log entry: ${entry.content}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 function ActivityTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [content, setContent] = useState('');
@@ -96,12 +209,6 @@ function ActivityTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Failed to log activity'),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (entryId: string) =>
-      fetch(`/api/power-tab/projects/${projectId}/log/${entryId}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['power-tab-log', projectId] }),
-  });
-
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
@@ -124,24 +231,7 @@ function ActivityTab({ projectId }: { projectId: string }) {
       ) : (
         <ul className="space-y-2">
           {entries.map((entry) => (
-            <li key={entry.id} className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2">
-              <div className="min-w-0">
-                <p className="text-sm">{entry.content}</p>
-                <p className="text-xs text-muted-foreground">
-                  {format(new Date(entry.entryDate), 'MMM d, yyyy')} ·{' '}
-                  {formatDistanceToNow(new Date(entry.entryDate), { addSuffix: true })}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={() => deleteMutation.mutate(entry.id)}
-                aria-label={`Delete log entry: ${entry.content}`}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </li>
+            <LogEntryRow key={entry.id} entry={entry} projectId={projectId} />
           ))}
         </ul>
       )}
@@ -151,49 +241,73 @@ function ActivityTab({ projectId }: { projectId: string }) {
 
 // ─── Milestones tab ─────────────────────────────────────────────────────────
 
-function NewMilestoneDialog({ projectId }: { projectId: string }) {
+function MilestoneDialog({
+  projectId,
+  milestone,
+  trigger,
+}: {
+  projectId: string;
+  milestone?: Milestone;
+  trigger: React.ReactElement;
+}) {
   const queryClient = useQueryClient();
+  const isEdit = !!milestone;
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [unitLabel, setUnitLabel] = useState('items');
-  const [targetCount, setTargetCount] = useState('');
-  const [targetDate, setTargetDate] = useState('');
+  const [title, setTitle] = useState(milestone?.title ?? '');
+  const [unitLabel, setUnitLabel] = useState(milestone?.unitLabel ?? 'items');
+  const [targetCount, setTargetCount] = useState(milestone?.targetCount ?? '');
+  const [targetDate, setTargetDate] = useState(milestone?.targetDate?.slice(0, 10) ?? '');
 
-  const createMutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: () =>
-      fetch(`/api/power-tab/projects/${projectId}/milestones`, {
-        method: 'POST',
-        headers: jsonHeaders,
-        body: JSON.stringify({
-          title,
-          unitLabel,
-          targetCount: Number(targetCount),
-          targetDate: targetDate || undefined,
-        }),
-      }).then((r) => {
-        if (!r.ok) throw new Error('Failed to create milestone');
+      fetch(
+        isEdit
+          ? `/api/power-tab/projects/${projectId}/milestones/${milestone!.id}`
+          : `/api/power-tab/projects/${projectId}/milestones`,
+        {
+          method: isEdit ? 'PATCH' : 'POST',
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            title,
+            unitLabel,
+            targetCount: Number(targetCount),
+            targetDate: targetDate || null,
+          }),
+        }
+      ).then((r) => {
+        if (!r.ok) throw new Error(isEdit ? 'Failed to update milestone' : 'Failed to create milestone');
         return r.json();
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['power-tab-milestones', projectId] });
-      toast.success('Milestone created');
+      toast.success(isEdit ? 'Milestone updated' : 'Milestone created');
       setOpen(false);
-      setTitle('');
-      setTargetCount('');
-      setTargetDate('');
+      if (!isEdit) {
+        setTitle('');
+        setTargetCount('');
+        setTargetDate('');
+      }
     },
-    onError: () => toast.error('Failed to create milestone'),
+    onError: () => toast.error(isEdit ? 'Failed to update milestone' : 'Failed to create milestone'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
-        <Plus className="h-4 w-4" />
-        New milestone
-      </DialogTrigger>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next && isEdit) {
+          setTitle(milestone!.title);
+          setUnitLabel(milestone!.unitLabel);
+          setTargetCount(milestone!.targetCount);
+          setTargetDate(milestone!.targetDate?.slice(0, 10) ?? '');
+        }
+      }}
+    >
+      <DialogTrigger render={trigger} />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New milestone</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit milestone' : 'New milestone'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <Input placeholder="Title (e.g. Expand 50 articles)" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -210,10 +324,10 @@ function NewMilestoneDialog({ projectId }: { projectId: string }) {
         </div>
         <DialogFooter>
           <Button
-            onClick={() => createMutation.mutate()}
-            disabled={!title.trim() || !targetCount || createMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+            disabled={!title.trim() || !targetCount || saveMutation.isPending}
           >
-            {createMutation.isPending ? 'Creating…' : 'Create'}
+            {saveMutation.isPending ? 'Saving…' : isEdit ? 'Save' : 'Create'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -230,14 +344,29 @@ function MilestonesTab({ projectId }: { projectId: string }) {
 
   const deleteMutation = useMutation({
     mutationFn: (milestoneId: string) =>
-      fetch(`/api/power-tab/projects/${projectId}/milestones/${milestoneId}`, { method: 'DELETE' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['power-tab-milestones', projectId] }),
+      fetch(`/api/power-tab/projects/${projectId}/milestones/${milestoneId}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error('Failed to delete milestone');
+        return r.json();
+      }),
+    onSuccess: (data: { undoId?: string; undoExpiresAt?: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['power-tab-milestones', projectId] });
+      undoableDelete('Milestone deleted', data.undoId, data.undoExpiresAt);
+    },
+    onError: () => toast.error('Failed to delete milestone'),
   });
 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <NewMilestoneDialog projectId={projectId} />
+        <MilestoneDialog
+          projectId={projectId}
+          trigger={
+            <Button size="sm">
+              <Plus className="h-4 w-4" />
+              New milestone
+            </Button>
+          }
+        />
       </div>
 
       {milestones.length === 0 ? (
@@ -251,15 +380,31 @@ function MilestonesTab({ projectId }: { projectId: string }) {
                   <Target className="h-4 w-4 text-primary shrink-0" />
                   <span className="text-sm font-medium">{m.title}</span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => deleteMutation.mutate(m.id)}
-                  aria-label={`Delete milestone ${m.title}`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                <div className="flex shrink-0 gap-0.5">
+                  <MilestoneDialog
+                    projectId={projectId}
+                    milestone={m}
+                    trigger={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        aria-label={`Edit milestone ${m.title}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    }
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    onClick={() => deleteMutation.mutate(m.id)}
+                    aria-label={`Delete milestone ${m.title}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
 
               <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -330,22 +475,75 @@ function PagesTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Failed to save page'),
   });
 
+  const renameMutation = useMutation({
+    mutationFn: (title: string) =>
+      fetch(`/api/power-tab/pages/${selectedId}`, {
+        method: 'PATCH',
+        headers: jsonHeaders,
+        body: JSON.stringify({ title }),
+      }).then((r) => {
+        if (!r.ok) throw new Error('Failed to rename page');
+        return r.json();
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['power-tab-pages', projectId] }),
+    onError: () => toast.error('Failed to rename page'),
+  });
+
+  const deletePageMutation = useMutation({
+    mutationFn: (pageId: string) =>
+      fetch(`/api/power-tab/pages/${pageId}`, { method: 'DELETE' }).then((r) => {
+        if (!r.ok) throw new Error('Failed to delete page');
+        return r.json();
+      }),
+    onSuccess: (data: { undoId?: string; undoExpiresAt?: string }, pageId) => {
+      queryClient.invalidateQueries({ queryKey: ['power-tab-pages', projectId] });
+      if (selectedId === pageId) setSelectedId(null);
+      undoableDelete('Page deleted', data.undoId, data.undoExpiresAt);
+    },
+    onError: () => toast.error('Failed to delete page'),
+  });
+
   const rootPages = useMemo(() => pages.filter((p) => !p.parentId), [pages]);
   const childrenOf = (parentId: string) => pages.filter((p) => p.parentId === parentId);
 
+  function handleDeletePage(p: PageSummary) {
+    const childCount = childrenOf(p.id).length;
+    if (childCount > 0) {
+      const ok = window.confirm(
+        `"${p.title}" has ${childCount} sub-page${childCount === 1 ? '' : 's'} that will be deleted too and ` +
+          `can't be recovered by Undo. Delete anyway?`
+      );
+      if (!ok) return;
+    }
+    deletePageMutation.mutate(p.id);
+  }
+
   function renderTree(items: PageSummary[], depth: number) {
     return items.map((p) => (
-      <div key={p.id}>
-        <button
-          onClick={() => setSelectedId(p.id)}
-          className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-accent ${
-            selectedId === p.id ? 'bg-accent font-medium' : ''
+      <div key={p.id} className="group/row">
+        <div
+          className={`flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent ${
+            selectedId === p.id ? 'bg-accent' : ''
           }`}
-          style={{ paddingLeft: `${depth * 16 + 8}px` }}
+          style={{ paddingLeft: `${depth * 16 + 4}px` }}
         >
-          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">{p.title}</span>
-        </button>
+          <button
+            onClick={() => setSelectedId(p.id)}
+            className={`flex min-w-0 flex-1 items-center gap-1.5 py-0.5 text-left text-sm ${
+              selectedId === p.id ? 'font-medium' : ''
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">{p.title}</span>
+          </button>
+          <button
+            onClick={() => handleDeletePage(p)}
+            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive group-hover/row:opacity-100"
+            aria-label={`Delete page ${p.title}`}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
         {renderTree(childrenOf(p.id), depth + 1)}
       </div>
     ));
@@ -364,13 +562,25 @@ function PagesTab({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      <div>
+      <div className="space-y-2">
         {selectedId && page ? (
-          <BlockEditor
-            pageId={page.id}
-            initialContent={(page.content ?? []) as never}
-            onSave={(content) => saveMutation.mutate(content)}
-          />
+          <>
+            <Input
+              defaultValue={page.title}
+              key={page.id}
+              onBlur={(e) => {
+                if (e.target.value.trim() && e.target.value !== page.title) {
+                  renameMutation.mutate(e.target.value.trim());
+                }
+              }}
+              className="font-medium"
+            />
+            <BlockEditor
+              pageId={page.id}
+              initialContent={(page.content ?? []) as never}
+              onSave={(content) => saveMutation.mutate(content)}
+            />
+          </>
         ) : (
           <p className="text-sm text-muted-foreground py-8 text-center">Select or create a page.</p>
         )}

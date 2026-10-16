@@ -4,7 +4,7 @@ import { journalEntries } from '@/lib/db/schema';
 import { requireSession } from '@/lib/auth/server';
 import { validateApiKey } from '@/lib/auth/api-key';
 import { headers } from 'next/headers';
-import { eq, and, gte, lte, desc, arrayContains } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, arrayContains, ilike, or } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
   const hdrs = await headers();
@@ -16,10 +16,12 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const month = searchParams.get('month'); // YYYY-MM
   const tag = searchParams.get('tag');
+  const search = searchParams.get('search')?.trim();
 
   const conditions = [eq(journalEntries.userId, userId)];
 
-  if (month) {
+  // A text search looks across all time; otherwise fall back to month scoping.
+  if (month && !search) {
     const [year, mon] = month.split('-').map(Number);
     const start = new Date(year, mon - 1, 1);
     const end = new Date(year, mon, 1);
@@ -29,6 +31,10 @@ export async function GET(req: NextRequest) {
 
   if (tag) {
     conditions.push(arrayContains(journalEntries.tags, [tag]));
+  }
+
+  if (search) {
+    conditions.push(or(ilike(journalEntries.title, `%${search}%`), ilike(journalEntries.content, `%${search}%`))!);
   }
 
   const entries = await db

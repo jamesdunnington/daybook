@@ -16,7 +16,7 @@ import {
   addMonths,
   subMonths,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin, Pencil, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -59,9 +59,10 @@ const PRESET_COLORS = [
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-async function fetchEvents(start: Date, end: Date): Promise<CalendarEvent[]> {
-  const url = `/api/calendar?start=${start.toISOString()}&end=${end.toISOString()}`;
-  const res = await fetch(url);
+async function fetchEvents(start: Date, end: Date, search?: string): Promise<CalendarEvent[]> {
+  const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() });
+  if (search) params.set('search', search);
+  const res = await fetch(`/api/calendar?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch events');
   return res.json();
 }
@@ -668,14 +669,21 @@ export default function CalendarPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [search, setSearch] = useState('');
+  const isSearching = search.trim().length > 0;
 
   const rangeStart = startOfWeek(startOfMonth(currentMonth));
   const rangeEnd = endOfWeek(endOfMonth(currentMonth));
 
   const { data: events = [], isLoading } = useQuery({
-    queryKey: ['calendar-events', format(currentMonth, 'yyyy-MM')],
-    queryFn: () => fetchEvents(rangeStart, rangeEnd),
+    queryKey: ['calendar-events', format(currentMonth, 'yyyy-MM'), search],
+    queryFn: () => fetchEvents(rangeStart, rangeEnd, search || undefined),
   });
+
+  const sortedSearchResults = useMemo(
+    () => [...events].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
+    [events]
+  );
 
   const thisWeekStart = useMemo(() => startOfWeek(new Date()), []);
   const thisWeekEnd = useMemo(() => endOfWeek(new Date()), []);
@@ -718,28 +726,43 @@ export default function CalendarPage() {
     queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
   }
 
+  function handleMonthJump(value: string) {
+    // value is "YYYY-MM" from the native <input type="month">
+    if (!value) return;
+    const [year, mon] = value.split('-').map(Number);
+    setCurrentMonth(new Date(year, mon - 1, 1));
+  }
+
   return (
     <div className="container max-w-5xl mx-auto p-4 md:p-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="hidden md:block">
           <h1 className="text-2xl font-bold tracking-tight">Calendar</h1>
-          <p className="text-sm text-muted-foreground">
+          <label className="relative inline-block text-sm text-muted-foreground">
             {format(currentMonth, 'MMMM yyyy')}
-          </p>
+            <input
+              type="month"
+              value={format(currentMonth, 'yyyy-MM')}
+              onChange={(e) => handleMonthJump(e.target.value)}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              aria-label="Jump to month and year"
+            />
+          </label>
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+          <Button variant="outline" size="icon" onClick={handlePrevMonth} disabled={isSearching}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
             onClick={() => setCurrentMonth(new Date())}
             className="text-sm"
+            disabled={isSearching}
           >
             Today
           </Button>
-          <Button variant="outline" size="icon" onClick={handleNextMonth}>
+          <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isSearching}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button
@@ -755,11 +778,44 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {/* Search across all events */}
+      <div className="relative mb-4">
+        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search all events…"
+          className="pl-8"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {/* Month name for mobile */}
       <h2 className="text-lg font-semibold mb-3 md:hidden text-center">
         {format(currentMonth, 'MMMM yyyy')}
       </h2>
 
+      {isSearching ? (
+        sortedSearchResults.length === 0 ? (
+          <p className="py-12 text-center text-sm text-muted-foreground">{`No events match "${search}".`}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {sortedSearchResults.map((event) => (
+              <button
+                key={event.id}
+                className="flex w-full items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50"
+                onClick={() => handleEventClick(event)}
+              >
+                <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: event.color }} />
+                <span className="flex-1 truncate font-medium">{event.title}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {format(new Date(event.startAt), event.allDay ? 'MMM d, yyyy' : 'MMM d, yyyy · h:mm a')}
+                </span>
+              </button>
+            ))}
+          </div>
+        )
+      ) : (
+      <>
       {/* Calendar grid */}
       {isLoading ? (
         <div className="border rounded-xl overflow-hidden bg-card animate-pulse">
@@ -828,6 +884,8 @@ export default function CalendarPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Add Event Dialog */}
       <AddEventDialog

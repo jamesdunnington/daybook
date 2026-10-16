@@ -133,6 +133,38 @@ function extForMime(mimeType: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Power Tab helpers — mirrors daybook/src/lib/ai/tools.ts's blocksToText /
+// newParagraphBlock, since this process has no access to that module.
+// ---------------------------------------------------------------------------
+function blocksToPlainText(blocks: unknown): string {
+  if (!Array.isArray(blocks)) return '';
+  const lines: string[] = [];
+  const visit = (block: Record<string, unknown>, depth: number) => {
+    const content = Array.isArray(block.content) ? block.content : [];
+    const text = content
+      .map((c) => (c && typeof c === 'object' && 'text' in c ? String((c as { text: unknown }).text) : ''))
+      .join('');
+    const prefix = block.type === 'checkListItem' ? ((block.props as { checked?: boolean } | undefined)?.checked ? '[x] ' : '[ ] ') : '';
+    if (text.trim() || prefix) lines.push('  '.repeat(depth) + prefix + text);
+    if (Array.isArray(block.children)) {
+      for (const child of block.children) visit(child as Record<string, unknown>, depth + 1);
+    }
+  };
+  for (const block of blocks) visit(block as Record<string, unknown>, 0);
+  return lines.join('\n');
+}
+
+function newParagraphBlock(text: string) {
+  return {
+    id: randomUUID(),
+    type: 'paragraph',
+    props: { textColor: 'default', backgroundColor: 'default', textAlignment: 'left' },
+    content: [{ type: 'text', text, styles: {} }],
+    children: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Helper: wrap tool handlers so errors surface as readable MCP responses
 // ---------------------------------------------------------------------------
 type ToolContent = { type: 'text'; text: string };
@@ -1038,6 +1070,192 @@ server.tool(
   'Delete a journal entry and all its attached photos by ID.',
   { id: z.string().describe('The journal entry ID to delete') },
   async ({ id }) => runTool(() => daybookFetch(`/api/journal/${id}`, { method: 'DELETE' })),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_projects
+// ---------------------------------------------------------------------------
+server.tool(
+  'list_projects',
+  'List all Power Tab projects.',
+  {},
+  async () => runTool(() => daybookFetch('/api/power-tab/projects')),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: create_project
+// ---------------------------------------------------------------------------
+server.tool(
+  'create_project',
+  'Create a new Power Tab project (e.g. one per website you manage).',
+  {
+    name: z.string().describe('Project name'),
+    description: z.string().optional().describe('Optional description'),
+    color: z.string().optional().describe("Optional hex color, e.g. '#0D9488'"),
+  },
+  async ({ name, description, color }) => runTool(() =>
+    daybookFetch('/api/power-tab/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name, description, color }),
+    }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: delete_project
+// ---------------------------------------------------------------------------
+server.tool(
+  'delete_project',
+  'Delete a Power Tab project and everything in it (pages, log, milestones).',
+  { id: z.string().describe('The project ID to delete') },
+  async ({ id }) => runTool(() => daybookFetch(`/api/power-tab/projects/${id}`, { method: 'DELETE' })),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: log_project_activity
+// ---------------------------------------------------------------------------
+server.tool(
+  'log_project_activity',
+  'Add a dated activity-log entry to a project — use this whenever the user mentions doing work on a project ' +
+  '(e.g. "expanded article X", "ran an audit"). Optionally link it to a milestone with a count so progress tracks it.',
+  {
+    projectId: z.string().describe('The project ID'),
+    content: z.string().describe('What was done'),
+    entryDate: z.string().optional().describe("Date in YYYY-MM-DD format; defaults to today"),
+    milestoneId: z.string().optional().describe('Optional milestone this counts toward'),
+    countValue: z.number().optional().describe('How much this entry counts toward the milestone (default 1)'),
+  },
+  async ({ projectId, ...body }) => runTool(() =>
+    daybookFetch(`/api/power-tab/projects/${projectId}/log`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_project_activity
+// ---------------------------------------------------------------------------
+server.tool(
+  'list_project_activity',
+  'List the dated activity-log entries for a project.',
+  { projectId: z.string().describe('The project ID') },
+  async ({ projectId }) => runTool(() => daybookFetch(`/api/power-tab/projects/${projectId}/log`)),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: create_milestone
+// ---------------------------------------------------------------------------
+server.tool(
+  'create_milestone',
+  'Create a milestone for a project — a target count (e.g. 50 articles) with an optional due date. Progress and ' +
+  'a pace-based forecast are computed automatically from linked activity-log entries.',
+  {
+    projectId: z.string().describe('The project ID'),
+    title: z.string().describe('Milestone title'),
+    unitLabel: z.string().optional().describe("Unit label, e.g. 'articles'"),
+    targetCount: z.number().describe('Target count to reach'),
+    targetDate: z.string().optional().describe('Optional due date (YYYY-MM-DD)'),
+  },
+  async ({ projectId, ...body }) => runTool(() =>
+    daybookFetch(`/api/power-tab/projects/${projectId}/milestones`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_project_milestones
+// ---------------------------------------------------------------------------
+server.tool(
+  'list_project_milestones',
+  'List milestones for a project, each with computed progress and a pace-based forecast finish date.',
+  { projectId: z.string().describe('The project ID') },
+  async ({ projectId }) => runTool(() => daybookFetch(`/api/power-tab/projects/${projectId}/milestones`)),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_project_pages
+// ---------------------------------------------------------------------------
+server.tool(
+  'list_project_pages',
+  "List a project's page tree (titles and IDs only).",
+  { projectId: z.string().describe('The project ID') },
+  async ({ projectId }) => runTool(() => daybookFetch(`/api/power-tab/projects/${projectId}/pages`)),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: read_project_page
+// ---------------------------------------------------------------------------
+server.tool(
+  'read_project_page',
+  'Read a project page as plain text (not raw block data).',
+  { pageId: z.string().describe('The page ID') },
+  async ({ pageId }) => runTool(async () => {
+    const page = (await daybookFetch(`/api/power-tab/pages/${pageId}`)) as { title: string; content: unknown };
+    return { title: page.title, text: blocksToPlainText(page.content) };
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: create_project_page
+// ---------------------------------------------------------------------------
+server.tool(
+  'create_project_page',
+  'Create a new page in a project (optionally nested under a parent page).',
+  {
+    projectId: z.string().describe('The project ID'),
+    title: z.string().describe('Page title'),
+    parentId: z.string().optional().describe('Optional parent page ID to nest under'),
+    initialText: z.string().optional().describe('Optional first paragraph of text'),
+  },
+  async ({ projectId, title, parentId, initialText }) => runTool(() =>
+    daybookFetch(`/api/power-tab/projects/${projectId}/pages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        parentId: parentId ?? null,
+        content: initialText ? [newParagraphBlock(initialText)] : [],
+      }),
+    }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: append_to_project_page
+// ---------------------------------------------------------------------------
+server.tool(
+  'append_to_project_page',
+  'Append a paragraph of text to an existing project page.',
+  { pageId: z.string().describe('The page ID'), text: z.string().describe('Text to append') },
+  async ({ pageId, text }) => runTool(async () => {
+    const page = (await daybookFetch(`/api/power-tab/pages/${pageId}`)) as { content: unknown[] };
+    const content = [...(Array.isArray(page.content) ? page.content : []), newParagraphBlock(text)];
+    return daybookFetch(`/api/power-tab/pages/${pageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: get_project_report
+// ---------------------------------------------------------------------------
+server.tool(
+  'get_project_report',
+  'Assemble a full report for a project — recent activity, milestone progress/forecasts, and page summaries — ' +
+  'for you to turn into a written analysis when the user asks how a project is going.',
+  { projectId: z.string().describe('The project ID') },
+  async ({ projectId }) => runTool(async () => {
+    const [project, log, milestones, pages] = await Promise.all([
+      daybookFetch(`/api/power-tab/projects/${projectId}`),
+      daybookFetch(`/api/power-tab/projects/${projectId}/log`),
+      daybookFetch(`/api/power-tab/projects/${projectId}/milestones`),
+      daybookFetch(`/api/power-tab/projects/${projectId}/pages`),
+    ]);
+    return { project, recentActivity: (log as unknown[]).slice(0, 30), milestones, pages };
+  }),
 );
 
   return server;

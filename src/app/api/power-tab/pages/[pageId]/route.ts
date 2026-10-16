@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { projectPages } from '@/lib/db/schema';
 import { requireSession } from '@/lib/auth/server';
 import { validateApiKey } from '@/lib/auth/api-key';
+import { recordUndo } from '@/lib/ai/undo';
 import { eq, and } from 'drizzle-orm';
 
 async function getUserId() {
@@ -64,5 +65,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   await db.delete(projectPages).where(eq(projectPages.id, pageId));
-  return NextResponse.json({ success: true });
+
+  const undo = await recordUndo({
+    userId,
+    conversationId: null,
+    toolName: 'delete_project_page',
+    summary: `Deleted page "${existing.title}"`,
+    undoData: { kind: 'restore_row', table: 'projectPages', row: existing },
+  });
+
+  return NextResponse.json({ success: true, undoId: undo.id, undoExpiresAt: undo.expiresAt.toISOString() });
 }

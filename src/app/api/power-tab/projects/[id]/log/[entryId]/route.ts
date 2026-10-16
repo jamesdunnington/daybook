@@ -12,6 +12,37 @@ async function getUserId() {
   return apiKeySession?.userId ?? (await requireSession()).session?.user?.id;
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; entryId: string }> }
+) {
+  const userId = await getUserId();
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { entryId } = await params;
+
+  const [existing] = await db
+    .select()
+    .from(projectActivityLog)
+    .where(and(eq(projectActivityLog.id, entryId), eq(projectActivityLog.userId, userId)))
+    .limit(1);
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  const body = await req.json().catch(() => ({}));
+  const updates: Partial<typeof projectActivityLog.$inferInsert> = {};
+  if (body.content !== undefined) updates.content = body.content;
+  if (body.entryDate !== undefined) updates.entryDate = new Date(body.entryDate);
+  if (body.milestoneId !== undefined) updates.milestoneId = body.milestoneId;
+  if (body.countValue !== undefined) updates.countValue = String(body.countValue);
+
+  const [updated] = await db
+    .update(projectActivityLog)
+    .set(updates)
+    .where(eq(projectActivityLog.id, entryId))
+    .returning();
+
+  return NextResponse.json(updated);
+}
+
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; entryId: string }> }

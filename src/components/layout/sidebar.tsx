@@ -25,8 +25,8 @@ const navItems = [
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/expenses', label: 'Expenses', icon: DollarSign },
-  { href: '/chat', label: 'AI Chat', icon: MessageSquare },
   { href: '/power-tab', label: 'Power Tab', icon: Blocks },
+  { href: '/chat', label: 'AI Chat', icon: MessageSquare },
 ];
 
 export function Sidebar() {

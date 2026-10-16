@@ -92,7 +92,10 @@ export async function POST(
   }
 
   const model = conv.model ?? (await getPreferredModel(userId));
-  const modelInfo = await getModelInfo(model).catch(() => null);
+  const modelInfo = await getModelInfo(model).catch((err) => {
+    console.error(`[chat] Failed to look up model info for "${model}":`, err);
+    return null;
+  });
   const supportsTools = modelInfo?.supportsTools ?? false;
   const supportsImages = modelInfo?.supportsImages ?? false;
 
@@ -114,10 +117,24 @@ export async function POST(
     }
   }
 
-  const warningNote =
+  const imageWarningNote =
     safeImages.length && !supportsImages
       ? `\n\n[Note: the currently selected model (${model}) cannot read images. Tell the user to pick a vision-capable model from the model picker to use photo features.]`
       : '';
+
+  // Critical: the base system prompt tells the model to act immediately via tools and
+  // confirm what it did. If this model has no tool access, that instruction causes it to
+  // hallucinate success messages ("Added todo: ...") without ever writing anything. This
+  // override must come last so it isn't buried or contradicted by earlier instructions.
+  const noToolsNote = !supportsTools
+    ? `\n\n[IMPORTANT: You have NO tools available in this conversation (the model "${model}" doesn't support ` +
+      'tool-calling, or its capability could not be confirmed). You cannot add, update, delete, or look up any ' +
+      "data — do not claim or imply that you did. If the user asks you to perform an action, tell them this " +
+      'model can\'t act on their data and to pick a different model (marked "Tools" in the model picker) if ' +
+      'they want the assistant to actually make changes.]'
+    : '';
+
+  const warningNote = imageWarningNote + noToolsNote;
 
   const userMessageForModel: OpenRouterMessage = {
     role: 'user',

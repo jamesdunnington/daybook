@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { calendarEvents } from '@/lib/db/schema';
 import { requireSession } from '@/lib/auth/server';
 import { validateApiKey } from '@/lib/auth/api-key';
-import { and, eq, gte, lte } from 'drizzle-orm';
+import { and, eq, gte, lte, ilike, or } from 'drizzle-orm';
 import { RRule } from 'rrule';
 
 export async function GET(req: NextRequest) {
@@ -16,15 +16,30 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const startParam = searchParams.get('start');
   const endParam = searchParams.get('end');
+  const search = searchParams.get('search')?.trim();
 
   const conditions = [eq(calendarEvents.userId, userId)];
-  if (startParam) conditions.push(gte(calendarEvents.startAt, new Date(startParam)));
-  if (endParam) conditions.push(lte(calendarEvents.startAt, new Date(endParam)));
+  // A text search looks across all time (and skips recurrence expansion below);
+  // otherwise scope to the given date range.
+  if (!search) {
+    if (startParam) conditions.push(gte(calendarEvents.startAt, new Date(startParam)));
+    if (endParam) conditions.push(lte(calendarEvents.startAt, new Date(endParam)));
+  } else {
+    conditions.push(
+      or(ilike(calendarEvents.title, `%${search}%`), ilike(calendarEvents.description, `%${search}%`))!
+    );
+  }
 
   const rows = await db
     .select()
     .from(calendarEvents)
     .where(and(...conditions));
+
+  if (search) {
+    // Skip recurrence expansion for search results — return each matching
+    // event once, at its own base start/end time.
+    return NextResponse.json(rows.map((event) => ({ ...event, instanceDate: event.startAt.toISOString() })));
+  }
 
   const rangeStart = startParam ? new Date(startParam) : new Date(0);
   const rangeEnd = endParam ? new Date(endParam) : new Date(8640000000000000);
