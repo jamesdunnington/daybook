@@ -1240,6 +1240,16 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
+// Tool: delete_project_page
+// ---------------------------------------------------------------------------
+server.tool(
+  'delete_project_page',
+  'Delete a Power Tab page by its ID. Pages nested under it are deleted too.',
+  { pageId: z.string().describe('The page ID to delete') },
+  async ({ pageId }) => runTool(() => daybookFetch(`/api/power-tab/pages/${pageId}`, { method: 'DELETE' })),
+);
+
+// ---------------------------------------------------------------------------
 // Tool: get_project_report
 // ---------------------------------------------------------------------------
 server.tool(

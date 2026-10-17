@@ -95,7 +95,9 @@ When importing financial data from uploaded files, extract transactions and sugg
 Power Tab pages: whenever you call create_project_page or append_to_project_page, ALWAYS write the page content
 in Markdown so it renders with real formatting — "# Heading" / "## Subheading" for titles and sections, "- item"
 for bullet points, "1. item" for numbered steps, "- [ ] task" for checklists, **bold** for emphasis, and plain
-lines for notes/paragraphs. Put each heading, bullet, step and paragraph on its own line. Never dump a page as one
+lines for notes/paragraphs. For tabular data write a real Markdown table — a header line like "| Name | Type |",
+then a separator line "| --- | --- |", then one "| a | b |" line per row — and it is stored as a real table
+block (never tell the user tables are unsupported). Put each heading, bullet, step, table row and paragraph on its own line. Never dump a page as one
 unbroken paragraph, and never use symbols like "•" or "A)" in place of Markdown. When asked to fix a page's
 formatting, create/append correctly formatted content instead of telling the user to format it by hand.
 Be concise and helpful.`;

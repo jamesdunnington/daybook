@@ -671,16 +671,38 @@ define(
 // Flattens a BlockNote document (array of blocks, each possibly with nested
 // `children`) into plain text — chat reads/writes pages as text, never raw
 // block JSON (see design doc: docs/superpowers/specs/2026-10-16-power-tab-design.md).
+function inlineText(content: unknown): string {
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((c) => (c && typeof c === 'object' && 'text' in c ? String((c as { text: unknown }).text) : ''))
+    .join('');
+}
+
+// Renders a BlockNote table block as a markdown table (header separator after the first row).
+function tableToLines(content: { rows?: { cells?: unknown[] }[]; headerRows?: number }): string[] {
+  const rows = (content.rows ?? []).map((row) =>
+    (row.cells ?? []).map((cell) =>
+      // A cell is either an inline-content array or a { type: 'tableCell', content } object.
+      inlineText(Array.isArray(cell) ? cell : (cell as { content?: unknown } | null)?.content).replace(/\|/g, '\\|')
+    )
+  );
+  const lines = rows.map((cells) => `| ${cells.join(' | ')} |`);
+  if (lines.length && (content.headerRows ?? 0) > 0) lines.splice(1, 0, `|${rows[0].map(() => ' --- ').join('|')}|`);
+  return lines;
+}
+
 function blocksToText(blocks: unknown): string {
   if (!Array.isArray(blocks)) return '';
   const lines: string[] = [];
   const visit = (block: Record<string, unknown>, depth: number) => {
-    const content = Array.isArray(block.content) ? block.content : [];
-    const text = content
-      .map((c) => (c && typeof c === 'object' && 'text' in c ? String((c as { text: unknown }).text) : ''))
-      .join('');
-    const prefix = block.type === 'checkListItem' ? (block.props as { checked?: boolean } | undefined)?.checked ? '[x] ' : '[ ] ' : '';
-    if (text.trim() || prefix) lines.push('  '.repeat(depth) + prefix + text);
+    const indent = '  '.repeat(depth);
+    if (block.type === 'table' && block.content && typeof block.content === 'object') {
+      for (const line of tableToLines(block.content as Parameters<typeof tableToLines>[0])) lines.push(indent + line);
+    } else {
+      const text = inlineText(block.content);
+      const prefix = block.type === 'checkListItem' ? (block.props as { checked?: boolean } | undefined)?.checked ? '[x] ' : '[ ] ' : '';
+      if (text.trim() || prefix) lines.push(indent + prefix + text);
+    }
     if (Array.isArray(block.children)) {
       for (const child of block.children) visit(child as Record<string, unknown>, depth + 1);
     }
@@ -715,15 +737,59 @@ function makeBlock(type: string, text: string, extraProps: Record<string, unknow
   };
 }
 
+// A markdown table separator row such as `| --- | :---: |` or `--- | ---`.
+const TABLE_SEPARATOR_RE = /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$/;
+
+// Splits `| a | b |` into trimmed cells, honouring `\|` escapes and dropping the outer pipes.
+function parseTableRow(line: string): string[] {
+  const cells = line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/(?<!\\)\|$/, '')
+    .split(/(?<!\\)\|/);
+  return cells.map((c) => c.trim().replace(/\\\|/g, '|'));
+}
+
+function makeTableBlock(rows: string[][], hasHeader: boolean) {
+  const cols = Math.max(...rows.map((r) => r.length));
+  return {
+    id: randomUUID(),
+    type: 'table',
+    props: { textColor: 'default' },
+    content: {
+      type: 'tableContent',
+      headerRows: hasHeader ? 1 : 0,
+      rows: rows.map((r) => ({
+        cells: Array.from({ length: cols }, (_, i) => inlineRuns(r[i] ?? '')),
+      })),
+    },
+    children: [],
+  };
+}
+
 // Converts markdown-ish text (headings, bullets, numbered lists, checklists,
-// paragraphs) into real BlockNote blocks so pages render formatted in the editor
-// instead of showing raw `#` / `-` / `1.` symbols in one paragraph.
+// tables, paragraphs) into real BlockNote blocks so pages render formatted in the editor
+// instead of showing raw `#` / `-` / `1.` / `|` symbols in one paragraph.
 function textToBlocks(text: string) {
-  const blocks: ReturnType<typeof makeBlock>[] = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
+  const blocks: object[] = [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (!line) continue;
     let m: RegExpMatchArray | null;
+    // Table: a run of lines containing `|` that starts with `|` or is followed by a separator row.
+    if (line.includes('|') && (line.startsWith('|') || TABLE_SEPARATOR_RE.test(lines[i + 1] ?? ''))) {
+      let end = i;
+      while (end + 1 < lines.length && lines[end + 1].includes('|') && !/^([-*+•]\s|#{1,6}\s|\d+[.)]\s)/.test(lines[end + 1])) end++;
+      const run = lines.slice(i, end + 1);
+      const rows = run.filter((l) => !TABLE_SEPARATOR_RE.test(l)).map(parseTableRow);
+      const hasSeparator = run.length > rows.length;
+      if (rows.length > 1 || (rows.length === 1 && hasSeparator)) {
+        blocks.push(makeTableBlock(rows, hasSeparator));
+        i = end;
+        continue;
+      }
+    }
     if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
       blocks.push(makeBlock('heading', m[2], { level: Math.min(m[1].length, 3) }));
     } else if ((m = line.match(/^[-*+]\s+\[( |x|X)\]\s+(.*)$/))) {
@@ -888,7 +954,7 @@ define(
       initialText: {
         type: 'string',
         description:
-          'Optional page body. Markdown is converted to real formatting: "# Heading" (1-3 #), "- item" bullets, "1. item" numbered lists, "- [ ] task" checklists, **bold**, `code`. One block per line; blank lines are skipped.',
+          'Optional page body. Markdown is converted to real formatting: "# Heading" (1-3 #), "- item" bullets, "1. item" numbered lists, "- [ ] task" checklists, "| a | b |" tables (header row, then a "| --- | --- |" separator row, then one line per row), **bold**, `code`. One block per line; blank lines are skipped.',
       },
     },
     required: ['projectId', 'title'],
@@ -910,7 +976,7 @@ define(
 
 define(
   'append_to_project_page',
-  'Append content to an existing project page. Markdown is converted to real formatting: "# Heading" (1-3 #), "- item" bullets, "1. item" numbered lists, "- [ ] task" checklists, **bold**, `code`. One block per line.',
+  'Append content to an existing project page. Markdown is converted to real formatting: "# Heading" (1-3 #), "- item" bullets, "1. item" numbered lists, "- [ ] task" checklists, "| a | b |" tables (header row, then a "| --- | --- |" separator row, then one line per row), **bold**, `code`. One block per line.',
   { properties: { pageId: { type: 'string' }, text: { type: 'string' } }, required: ['pageId', 'text'] },
   async (args, ctx) => {
     const page = (await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/pages/${args.pageId}`)) as {
@@ -922,6 +988,18 @@ define(
       body: JSON.stringify({ content }),
     });
     return { output, summary: 'Appended text to page' };
+  }
+);
+
+define(
+  'delete_project_page',
+  'Delete a Power Tab page by its ID. Pages nested under it are deleted too.',
+  { properties: { pageId: { type: 'string' } }, required: ['pageId'] },
+  async (args, ctx) => {
+    const result = (await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/pages/${args.pageId}`, {
+      method: 'DELETE',
+    })) as { undoId?: string; undoExpiresAt?: string };
+    return { output: result, summary: 'Deleted page', undoId: result.undoId, undoExpiresAt: result.undoExpiresAt };
   }
 );
 
