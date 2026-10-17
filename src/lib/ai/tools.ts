@@ -739,6 +739,28 @@ function textToBlocks(text: string) {
   return blocks;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+// Models sometimes pass a project name or slug ("new_horizon_tab") instead of the
+// UUID, which the DB rejects. Accept a UUID as-is; otherwise match by name/slug.
+async function resolveProjectId(ref: unknown, ctx: { origin: string; cookieHeader: string }): Promise<string> {
+  const value = String(ref ?? '').trim();
+  if (UUID_RE.test(value)) return value;
+  const projects = (await internalFetch(ctx.origin, ctx.cookieHeader, '/api/power-tab/projects')) as {
+    id: string;
+    name: string;
+  }[];
+  const key = slugify(value);
+  const match = projects.find((p) => slugify(p.name) === key);
+  if (!match) {
+    throw new Error(
+      `No project matches "${value}". Call list_projects and pass the project's "id" (a UUID), not its name.`
+    );
+  }
+  return match.id;
+}
+
 define(
   'list_projects',
   'List all Power Tab projects.',
@@ -777,7 +799,8 @@ define(
     required: ['projectId', 'content'],
   },
   async (args, ctx) => {
-    const { projectId, ...body } = args;
+    const { projectId: projectRef, ...body } = args;
+    const projectId = await resolveProjectId(projectRef, ctx);
     const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/log`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -791,7 +814,7 @@ define(
   'List the dated activity-log entries for a project.',
   { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
   async (args, ctx) => ({
-    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/log`),
+    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${await resolveProjectId(args.projectId, ctx)}/log`),
     summary: 'Listed project activity',
   })
 );
@@ -811,7 +834,8 @@ define(
     required: ['projectId', 'title', 'targetCount'],
   },
   async (args, ctx) => {
-    const { projectId, ...body } = args;
+    const { projectId: projectRef, ...body } = args;
+    const projectId = await resolveProjectId(projectRef, ctx);
     const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/milestones`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -825,7 +849,7 @@ define(
   'List milestones for a project, each with computed progress and a pace-based forecast finish date.',
   { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
   async (args, ctx) => ({
-    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/milestones`),
+    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${await resolveProjectId(args.projectId, ctx)}/milestones`),
     summary: 'Listed milestones',
   })
 );
@@ -835,7 +859,7 @@ define(
   "List a project's page tree (titles and IDs only).",
   { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
   async (args, ctx) => ({
-    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/pages`),
+    output: await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${await resolveProjectId(args.projectId, ctx)}/pages`),
     summary: 'Listed project pages',
   })
 );
@@ -870,12 +894,13 @@ define(
     required: ['projectId', 'title'],
   },
   async (args, ctx) => {
+    const projectId = await resolveProjectId(args.projectId, ctx);
     const body = {
       title: args.title,
       parentId: args.parentId ?? null,
       content: args.initialText ? textToBlocks(String(args.initialText)) : [],
     };
-    const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/pages`, {
+    const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/pages`, {
       method: 'POST',
       body: JSON.stringify(body),
     });
@@ -906,11 +931,12 @@ define(
   'for you to turn into a written analysis when the user asks how a project is going.',
   { properties: { projectId: { type: 'string' } }, required: ['projectId'] },
   async (args, ctx) => {
+    const projectId = await resolveProjectId(args.projectId, ctx);
     const [project, log, milestones, pages] = await Promise.all([
-      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}`),
-      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/log`),
-      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/milestones`),
-      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/pages`),
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}`),
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/log`),
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/milestones`),
+      internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/pages`),
     ]);
     return {
       output: { project, recentActivity: (log as unknown[]).slice(0, 30), milestones, pages },

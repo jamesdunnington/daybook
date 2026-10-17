@@ -12,7 +12,11 @@ async function getUserId() {
   return apiKeySession?.userId ?? (await requireSession()).session?.user?.id;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function ownsProject(projectId: string, userId: string) {
+  // A non-UUID id would make Postgres throw (invalid uuid syntax) and surface as an empty 500.
+  if (!UUID_RE.test(projectId)) return false;
   const [row] = await db
     .select({ id: projects.id })
     .from(projects)
