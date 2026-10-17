@@ -11,8 +11,9 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckSquare, TrendingUp, Calendar, BookOpen, ArrowRight } from 'lucide-react';
+import { CheckSquare, TrendingUp, Calendar, BookOpen, ArrowRight, Blocks, AlertTriangle } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, addDays, startOfDay, endOfDay } from 'date-fns';
+import { getProjectAttention } from '@/lib/power-tab/attention';
 
 function formatCurrency(amount: number, currency = 'USD'): string {
   return new Intl.NumberFormat('en-US', {
@@ -123,7 +124,13 @@ async function getDashboardData(userId: string) {
   // 6. Next 3 upcoming events
   const nextThreeEvents = upcomingEvents.slice(0, 3);
 
+  // 7. Power Tab: open project count and the project needing attention most
+  const { openProjects, attention } = await getProjectAttention(userId);
+  const topAttention = attention[0] ?? null;
+
   return {
+    openProjects,
+    topAttention,
     todayTodosCount: todayTodos.length,
     netPnl,
     upcomingEventsCount: upcomingEvents.length,
@@ -147,6 +154,8 @@ export default async function DashboardPage() {
     streak,
     recentTodos,
     nextThreeEvents,
+    openProjects,
+    topAttention,
   } = await getDashboardData(userId);
 
   const summaryCards = [
@@ -183,6 +192,14 @@ export default async function DashboardPage() {
       href: '/journal',
       iconColor: 'text-amber-500',
     },
+    {
+      title: 'Open Projects',
+      value: String(openProjects),
+      description: 'in Power Tab',
+      icon: Blocks,
+      href: '/power-tab',
+      iconColor: 'text-teal-500',
+    },
   ];
 
   return (
@@ -197,8 +214,29 @@ export default async function DashboardPage() {
         </p>
       </div>
 
+      {/* Project needing attention now (hidden when nothing is urgent) */}
+      {topAttention && (
+        <Link href={`/power-tab/${topAttention.projectId}`} className="block group">
+          <Card className="border-destructive/50 bg-destructive/5 transition-shadow group-hover:ring-ring/30">
+            <CardContent className="flex items-start gap-3 py-1">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-destructive">
+                  Needs attention now
+                </p>
+                <p className="text-base font-semibold truncate mt-0.5">{topAttention.projectName}</p>
+                <p className="text-sm text-muted-foreground">{topAttention.reason}</p>
+              </div>
+              <span className="hidden sm:flex items-center gap-1 text-xs text-destructive shrink-0 mt-1">
+                Open project <ArrowRight className="h-3 w-3" />
+              </span>
+            </CardContent>
+          </Card>
+        </Link>
+      )}
+
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {summaryCards.map((card) => (
           <Link key={card.title} href={card.href} className="block group">
             <Card className="h-full transition-shadow group-hover:ring-ring/30">

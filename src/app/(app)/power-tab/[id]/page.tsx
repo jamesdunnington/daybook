@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
-import { Plus, Trash2, FileText, Target, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, FileText, Target, Pencil, Check, X, CheckCircle2, RotateCcw } from 'lucide-react';
 import { undoableDelete } from '@/lib/power-tab/undo-toast';
 import { useConfirm } from '@/components/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ interface Project {
   id: string;
   name: string;
   description: string | null;
+  status: string;
 }
 
 interface LogEntry {
@@ -603,11 +604,57 @@ export default function ProjectDetailPage() {
     queryFn: () => fetch(`/api/power-tab/projects/${projectId}`).then((r) => r.json()),
   });
 
+  const queryClient = useQueryClient();
+  const isCompleted = project?.status === 'completed';
+
+  const statusMutation = useMutation({
+    mutationFn: (status: 'active' | 'completed') =>
+      fetch(`/api/power-tab/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      }).then((r) => {
+        if (!r.ok) throw new Error('Failed to update project status');
+        return r.json();
+      }),
+    onSuccess: (_data, status) => {
+      queryClient.invalidateQueries({ queryKey: ['power-tab-project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['power-tab-projects'] });
+      toast.success(status === 'completed' ? 'Project marked complete' : 'Project reopened');
+    },
+    onError: () => toast.error('Failed to update project status'),
+  });
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{project?.name ?? 'Loading…'}</h1>
-        {project?.description && <p className="text-sm text-muted-foreground mt-1">{project.description}</p>}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight truncate">{project?.name ?? 'Loading…'}</h1>
+            {isCompleted && <Badge variant="outline">Completed</Badge>}
+          </div>
+          {project?.description && <p className="text-sm text-muted-foreground mt-1">{project.description}</p>}
+        </div>
+        {project && (
+          <Button
+            variant="outline"
+            className="shrink-0"
+            disabled={statusMutation.isPending}
+            onClick={() => statusMutation.mutate(isCompleted ? 'active' : 'completed')}
+          >
+            {isCompleted ? (
+              <>
+                <RotateCcw className="h-4 w-4" />
+                Reopen
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4" />
+                Mark complete
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       <Tabs defaultValue="activity">

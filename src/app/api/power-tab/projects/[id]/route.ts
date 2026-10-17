@@ -44,7 +44,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const updates: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
   if (body.name !== undefined) updates.name = body.name;
   if (body.description !== undefined) updates.description = body.description;
-  if (body.status !== undefined) updates.status = body.status;
+  if (body.status !== undefined) {
+    if (body.status !== 'active' && body.status !== 'completed') {
+      return NextResponse.json({ error: "status must be 'active' or 'completed'" }, { status: 400 });
+    }
+    updates.status = body.status;
+  }
   if (body.color !== undefined) updates.color = body.color;
 
   const [updated] = await db
