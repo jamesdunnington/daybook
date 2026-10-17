@@ -55,6 +55,7 @@ interface Milestone {
   unitLabel: string;
   targetCount: string;
   targetDate: string | null;
+  status: string;
   forecast: Forecast;
 }
 
@@ -73,23 +74,86 @@ const jsonHeaders = { 'Content-Type': 'application/json' };
 
 // ─── Activity tab ───────────────────────────────────────────────────────────
 
+/** Milestone dropdown plus a "how much" count, shown once a milestone is picked. */
+function MilestoneFields({
+  milestones,
+  milestoneId,
+  count,
+  onMilestoneChange,
+  onCountChange,
+}: {
+  milestones: Milestone[];
+  milestoneId: string;
+  count: string;
+  onMilestoneChange: (id: string) => void;
+  onCountChange: (count: string) => void;
+}) {
+  const selected = milestones.find((m) => m.id === milestoneId);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={milestoneId}
+        onChange={(e) => onMilestoneChange(e.target.value)}
+        aria-label="Link to milestone"
+        className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm"
+      >
+        <option value="">No milestone</option>
+        {milestones.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.title}
+          </option>
+        ))}
+      </select>
+      {selected && (
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min="0"
+            step="any"
+            value={count}
+            onChange={(e) => onCountChange(e.target.value)}
+            aria-label={`How many ${selected.unitLabel}`}
+            className="w-24"
+          />
+          <span className="text-sm text-muted-foreground">{selected.unitLabel}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function isValidCount(count: string): boolean {
+  const n = parseFloat(count);
+  return Number.isFinite(n) && n > 0;
+}
+
 function LogEntryRow({
   entry,
   projectId,
+  milestones,
 }: {
   entry: LogEntry;
   projectId: string;
+  milestones: Milestone[];
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(entry.content);
+  const [milestoneId, setMilestoneId] = useState(entry.milestoneId ?? '');
+  const [count, setCount] = useState(String(parseFloat(entry.countValue)));
+  const linked = milestones.find((m) => m.id === entry.milestoneId);
+  const canSave = !!draft.trim() && (!milestoneId || isValidCount(count));
 
   const editMutation = useMutation({
     mutationFn: () =>
       fetch(`/api/power-tab/projects/${projectId}/log/${entry.id}`, {
         method: 'PATCH',
         headers: jsonHeaders,
-        body: JSON.stringify({ content: draft }),
+        body: JSON.stringify({
+          content: draft,
+          milestoneId: milestoneId || null,
+          countValue: milestoneId ? parseFloat(count) : 1,
+        }),
       }).then((r) => {
         if (!r.ok) throw new Error('Failed to update entry');
         return r.json();
@@ -97,6 +161,7 @@ function LogEntryRow({
     onSuccess: () => {
       setEditing(false);
       queryClient.invalidateQueries({ queryKey: ['power-tab-log', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['power-tab-milestones', projectId] });
     },
     onError: () => toast.error('Failed to update entry'),
   });
@@ -109,6 +174,7 @@ function LogEntryRow({
       }),
     onSuccess: (data: { undoId?: string; undoExpiresAt?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['power-tab-log', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['power-tab-milestones', projectId] });
       undoableDelete('Log entry deleted', data.undoId, data.undoExpiresAt);
     },
     onError: () => toast.error('Failed to delete entry'),
@@ -116,35 +182,44 @@ function LogEntryRow({
 
   if (editing) {
     return (
-      <li className="flex items-center gap-2 rounded-lg border px-3 py-2">
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && draft.trim()) editMutation.mutate();
-            if (e.key === 'Escape') setEditing(false);
-          }}
-          autoFocus
+      <li className="space-y-2 rounded-lg border px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && canSave) editMutation.mutate();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            autoFocus
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={() => editMutation.mutate()}
+            disabled={!canSave || editMutation.isPending}
+            aria-label="Save edit"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={() => setEditing(false)}
+            aria-label="Cancel edit"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <MilestoneFields
+          milestones={milestones}
+          milestoneId={milestoneId}
+          count={count}
+          onMilestoneChange={setMilestoneId}
+          onCountChange={setCount}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0"
-          onClick={() => editMutation.mutate()}
-          disabled={!draft.trim() || editMutation.isPending}
-          aria-label="Save edit"
-        >
-          <Check className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0"
-          onClick={() => setEditing(false)}
-          aria-label="Cancel edit"
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
       </li>
     );
   }
@@ -157,6 +232,11 @@ function LogEntryRow({
           {format(new Date(entry.entryDate), 'MMM d, yyyy')} ·{' '}
           {formatDistanceToNow(new Date(entry.entryDate), { addSuffix: true })}
         </p>
+        {linked && (
+          <Badge variant="outline" className="mt-1 max-w-full truncate">
+            +{parseFloat(entry.countValue)} {linked.unitLabel} · {linked.title}
+          </Badge>
+        )}
       </div>
       <div className="flex shrink-0 gap-0.5">
         <Button
@@ -165,6 +245,8 @@ function LogEntryRow({
           className="h-7 w-7 text-muted-foreground hover:text-foreground"
           onClick={() => {
             setDraft(entry.content);
+            setMilestoneId(entry.milestoneId ?? '');
+            setCount(String(parseFloat(entry.countValue)));
             setEditing(true);
           }}
           aria-label={`Edit log entry: ${entry.content}`}
@@ -188,44 +270,71 @@ function LogEntryRow({
 function ActivityTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [content, setContent] = useState('');
+  const [milestoneId, setMilestoneId] = useState('');
+  const [count, setCount] = useState('1');
 
   const { data: entries = [] } = useQuery<LogEntry[]>({
     queryKey: ['power-tab-log', projectId],
     queryFn: () => fetch(`/api/power-tab/projects/${projectId}/log`).then((r) => r.json()),
   });
 
+  const { data: allMilestones = [] } = useQuery<Milestone[]>({
+    queryKey: ['power-tab-milestones', projectId],
+    queryFn: () => fetch(`/api/power-tab/projects/${projectId}/milestones`).then((r) => r.json()),
+  });
+  // Completed milestones can't be logged against, but entries already linked to one still show it.
+  const openMilestones = allMilestones.filter((m) => m.status === 'active');
+  const canLog = !!content.trim() && (!milestoneId || isValidCount(count));
+
   const addMutation = useMutation({
     mutationFn: () =>
       fetch(`/api/power-tab/projects/${projectId}/log`, {
         method: 'POST',
         headers: jsonHeaders,
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(
+          milestoneId
+            ? { content, milestoneId, countValue: parseFloat(count) }
+            : { content }
+        ),
       }).then((r) => {
         if (!r.ok) throw new Error('Failed to log activity');
         return r.json();
       }),
     onSuccess: () => {
       setContent('');
+      setCount('1');
       queryClient.invalidateQueries({ queryKey: ['power-tab-log', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['power-tab-milestones', projectId] });
     },
     onError: () => toast.error('Failed to log activity'),
   });
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
-        <Input
-          placeholder="What did you do? (e.g. expanded article X to 2k words)"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && content.trim()) addMutation.mutate();
-          }}
-        />
-        <Button onClick={() => addMutation.mutate()} disabled={!content.trim() || addMutation.isPending}>
-          <Plus className="h-4 w-4" />
-          Log
-        </Button>
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <Input
+            placeholder="What did you do? (e.g. expanded article X to 2k words)"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && canLog) addMutation.mutate();
+            }}
+          />
+          <Button onClick={() => addMutation.mutate()} disabled={!canLog || addMutation.isPending}>
+            <Plus className="h-4 w-4" />
+            Log
+          </Button>
+        </div>
+        {openMilestones.length > 0 && (
+          <MilestoneFields
+            milestones={openMilestones}
+            milestoneId={milestoneId}
+            count={count}
+            onMilestoneChange={setMilestoneId}
+            onCountChange={setCount}
+          />
+        )}
       </div>
 
       {entries.length === 0 ? (
@@ -233,7 +342,7 @@ function ActivityTab({ projectId }: { projectId: string }) {
       ) : (
         <ul className="space-y-2">
           {entries.map((entry) => (
-            <LogEntryRow key={entry.id} entry={entry} projectId={projectId} />
+            <LogEntryRow key={entry.id} entry={entry} projectId={projectId} milestones={allMilestones} />
           ))}
         </ul>
       )}

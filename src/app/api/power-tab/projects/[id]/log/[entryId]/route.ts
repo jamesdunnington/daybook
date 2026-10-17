@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { db } from '@/lib/db';
-import { projectActivityLog } from '@/lib/db/schema';
+import { projectActivityLog, projectMilestones } from '@/lib/db/schema';
 import { requireSession } from '@/lib/auth/server';
 import { validateApiKey } from '@/lib/auth/api-key';
 import { eq, and } from 'drizzle-orm';
@@ -31,7 +31,17 @@ export async function PATCH(
   const updates: Partial<typeof projectActivityLog.$inferInsert> = {};
   if (body.content !== undefined) updates.content = body.content;
   if (body.entryDate !== undefined) updates.entryDate = new Date(body.entryDate);
-  if (body.milestoneId !== undefined) updates.milestoneId = body.milestoneId;
+  if (body.milestoneId !== undefined) {
+    if (body.milestoneId !== null) {
+      const [milestone] = await db
+        .select({ id: projectMilestones.id })
+        .from(projectMilestones)
+        .where(and(eq(projectMilestones.id, body.milestoneId), eq(projectMilestones.projectId, existing.projectId)))
+        .limit(1);
+      if (!milestone) return NextResponse.json({ error: 'Milestone not found in this project' }, { status: 400 });
+    }
+    updates.milestoneId = body.milestoneId;
+  }
   if (body.countValue !== undefined) updates.countValue = String(body.countValue);
 
   const [updated] = await db

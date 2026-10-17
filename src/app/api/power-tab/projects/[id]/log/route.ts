@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { db } from '@/lib/db';
-import { projects, projectActivityLog } from '@/lib/db/schema';
+import { projects, projectActivityLog, projectMilestones } from '@/lib/db/schema';
 import { requireSession } from '@/lib/auth/server';
 import { validateApiKey } from '@/lib/auth/api-key';
 import { eq, and, desc } from 'drizzle-orm';
@@ -45,6 +45,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
   if (!body.content || typeof body.content !== 'string' || !body.content.trim()) {
     return NextResponse.json({ error: 'content is required' }, { status: 400 });
+  }
+
+  if (body.milestoneId) {
+    const [milestone] = await db
+      .select({ id: projectMilestones.id })
+      .from(projectMilestones)
+      .where(and(eq(projectMilestones.id, body.milestoneId), eq(projectMilestones.projectId, id)))
+      .limit(1);
+    if (!milestone) return NextResponse.json({ error: 'Milestone not found in this project' }, { status: 400 });
   }
 
   const [entry] = await db
