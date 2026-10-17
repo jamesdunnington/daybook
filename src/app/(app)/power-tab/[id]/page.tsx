@@ -704,6 +704,67 @@ function PagesTab({ projectId }: { projectId: string }) {
 
 // ─── Main page ──────────────────────────────────────────────────────────────
 
+/** Overall and per-milestone progress, shown above the tabs so it's visible from any of them. */
+function ProgressStrip({ milestones }: { milestones: Milestone[] }) {
+  const active = milestones.filter((m) => m.status === 'active');
+
+  if (active.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
+        No milestones yet. Add one in the Milestones tab and log activity against it to track progress here.
+      </p>
+    );
+  }
+
+  const overall = Math.round(
+    active.reduce((sum, m) => sum + m.forecast.percentComplete, 0) / active.length
+  );
+
+  return (
+    <div className="space-y-3 rounded-lg border px-3 py-3">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">Overall progress</span>
+        <span className="font-semibold">{overall}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${overall}%` }} />
+      </div>
+      <ul className="space-y-3">
+        {active.map((m) => {
+          const { forecast } = m;
+          const pct = Math.round(forecast.percentComplete);
+          const done = forecast.remaining <= 0;
+          const behind =
+            !done &&
+            !!m.targetDate &&
+            !!forecast.forecastDate &&
+            new Date(forecast.forecastDate) > new Date(m.targetDate);
+          return (
+            <li key={m.id} className="space-y-1">
+              <div className="flex items-baseline justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate font-medium">{m.title}</span>
+                <span className="shrink-0 text-muted-foreground">{pct}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full transition-all ${behind ? 'bg-destructive' : 'bg-primary'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {forecast.progressSoFar} of {forecast.targetCount} {m.unitLabel}
+                {m.targetDate && ` · due ${format(new Date(m.targetDate), 'MMM d')}`}
+                {done && ' · done'}
+                {behind && <span className="text-destructive"> · behind pace</span>}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
@@ -715,6 +776,11 @@ export default function ProjectDetailPage() {
 
   const queryClient = useQueryClient();
   const isCompleted = project?.status === 'completed';
+
+  const { data: milestones = [] } = useQuery<Milestone[]>({
+    queryKey: ['power-tab-milestones', projectId],
+    queryFn: () => fetch(`/api/power-tab/projects/${projectId}/milestones`).then((r) => r.json()),
+  });
 
   const statusMutation = useMutation({
     mutationFn: (status: 'active' | 'completed') =>
@@ -765,6 +831,8 @@ export default function ProjectDetailPage() {
           </Button>
         )}
       </div>
+
+      <ProgressStrip milestones={milestones} />
 
       <Tabs defaultValue="activity">
         <TabsList>
