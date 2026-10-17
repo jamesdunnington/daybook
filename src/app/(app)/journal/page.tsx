@@ -14,6 +14,7 @@ import {
   isSameDay,
   parseISO,
 } from 'date-fns';
+import { useConfirm } from '@/components/confirm-dialog';
 import { ChevronLeft, ChevronRight, Plus, X, ImageIcon, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -475,6 +476,7 @@ function EntryDetailSheet({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
@@ -619,9 +621,10 @@ function EntryDetailSheet({
                             <button
                               type="button"
                               onClick={() => deletePhotoMutation.mutate(photo.id)}
-                              className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                              aria-label={`Remove photo ${photo.originalName}`}
+                              className="absolute top-1 right-1 flex size-6 items-center justify-center bg-black/60 text-white rounded-full transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-visible:opacity-100"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         ))}
@@ -716,7 +719,13 @@ function EntryDetailSheet({
                     variant="destructive"
                     size="sm"
                     className="ml-auto"
-                    onClick={() => deleteMutation.mutate()}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: entry?.title ? `Delete "${entry.title}"?` : 'Delete this journal entry?',
+                        description: "The entry and its photos will be removed. This can't be undone.",
+                      });
+                      if (ok) deleteMutation.mutate();
+                    }}
                     disabled={deleteMutation.isPending}
                   >
                     {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
@@ -856,10 +865,10 @@ export default function JournalPage() {
             />
           </label>
           <div className="flex gap-1">
-            <Button variant="ghost" size="icon-sm" onClick={handleMonthPrev}>
+            <Button variant="ghost" size="icon-sm" onClick={handleMonthPrev} aria-label="Previous month">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon-sm" onClick={handleMonthNext}>
+            <Button variant="ghost" size="icon-sm" onClick={handleMonthNext} aria-label="Next month">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useConfirm } from '@/components/confirm-dialog';
 import { PlusIcon, Trash2Icon, DownloadIcon, TrendingUpIcon, TrendingDownIcon, BarChart2Icon, TagIcon, PencilIcon, PaperclipIcon, XIcon, ExternalLinkIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -477,7 +478,7 @@ function EditTransactionDialog({ transaction, categories, onSuccess }: EditTrans
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" />}>
+      <DialogTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:text-foreground" aria-label="Edit transaction" />}>
         <PencilIcon className="size-3.5" />
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -652,6 +653,7 @@ function EditTransactionDialog({ transaction, categories, onSuccess }: EditTrans
 // ─── Manage Expense Categories Dialog ────────────────────────────────────────
 
 function ManageExpenseCategoriesDialog({ onSuccess }: { onSuccess: () => void }) {
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState<'expense' | 'income'>('expense');
@@ -690,7 +692,12 @@ function ManageExpenseCategoriesDialog({ onSuccess }: { onSuccess: () => void })
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: `Delete category "${name}"?`,
+      description: 'Transactions already in this category keep their amounts, but will no longer have a category.',
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/expenses/categories/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete category');
@@ -749,7 +756,7 @@ function ManageExpenseCategoriesDialog({ onSuccess }: { onSuccess: () => void })
                   <div key={cat.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent">
                     <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: cat.color ?? '#6366f1' }} />
                     <span className="flex-1 text-sm">{cat.name}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => handleDelete(cat.id)}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => handleDelete(cat.id, cat.name)} aria-label={`Delete category ${cat.name}`}>
                       <Trash2Icon className="h-3 w-3" />
                     </Button>
                   </div>
@@ -763,7 +770,7 @@ function ManageExpenseCategoriesDialog({ onSuccess }: { onSuccess: () => void })
                   <div key={cat.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent">
                     <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: cat.color ?? '#10b981' }} />
                     <span className="flex-1 text-sm">{cat.name}</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => handleDelete(cat.id)}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => handleDelete(cat.id, cat.name)} aria-label={`Delete category ${cat.name}`}>
                       <Trash2Icon className="h-3 w-3" />
                     </Button>
                   </div>
@@ -787,6 +794,7 @@ interface TransactionsTabProps {
 }
 
 function TransactionsTab({ categories }: TransactionsTabProps) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [filterType, setFilterType] = useState('');
   const [filterCategoryId, setFilterCategoryId] = useState('');
@@ -891,6 +899,7 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
             <Label className="text-xs text-muted-foreground shrink-0">From</Label>
             <Input
               type="date"
+              aria-label="From date"
               className="h-8 flex-1 sm:w-36 sm:flex-none text-sm"
               value={filterFrom}
               onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
@@ -901,6 +910,7 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
             <Label className="text-xs text-muted-foreground shrink-0">To</Label>
             <Input
               type="date"
+              aria-label="To date"
               className="h-8 flex-1 sm:w-36 sm:flex-none text-sm"
               value={filterTo}
               onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
@@ -1055,8 +1065,15 @@ function TransactionsTab({ categories }: TransactionsTabProps) {
                               variant="ghost"
                               size="icon-sm"
                               className="text-muted-foreground hover:text-destructive"
-                              onClick={() => deleteMutation.mutate(tx.id)}
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: 'Delete this transaction?',
+                                  description: `${tx.description || 'This transaction'} will be removed from your records and totals.`,
+                                });
+                                if (ok) deleteMutation.mutate(tx.id);
+                              }}
                               disabled={deleteMutation.isPending}
+                              aria-label="Delete transaction"
                             >
                               <Trash2Icon className="size-3.5" />
                             </Button>
@@ -1145,6 +1162,7 @@ function PLReportTab() {
           <Label className="text-xs text-muted-foreground">From</Label>
           <Input
             type="date"
+            aria-label="From date"
             className="h-8 w-36 text-sm"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
@@ -1154,6 +1172,7 @@ function PLReportTab() {
           <Label className="text-xs text-muted-foreground">To</Label>
           <Input
             type="date"
+            aria-label="To date"
             className="h-8 w-36 text-sm"
             value={to}
             onChange={(e) => setTo(e.target.value)}

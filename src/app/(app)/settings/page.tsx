@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ModelPicker } from '@/components/chat/model-picker';
+import { useConfirm } from '@/components/confirm-dialog';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +36,7 @@ interface ApiKey {
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [apiKeyName, setApiKeyName] = useState('');
   const [newToken, setNewToken] = useState<string | null>(null);
   const [telegramCode, setTelegramCode] = useState('');
@@ -115,15 +117,17 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Timezone</Label>
+              <Label htmlFor="setting-timezone">Timezone</Label>
               <Input
+                id="setting-timezone"
                 defaultValue={settings?.timezone ?? 'UTC'}
                 onBlur={(e) => updateSettings.mutate({ timezone: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label>Currency</Label>
+              <Label htmlFor="setting-currency">Currency</Label>
               <Input
+                id="setting-currency"
                 defaultValue={settings?.currency ?? 'USD'}
                 onBlur={(e) => updateSettings.mutate({ currency: e.target.value })}
               />
@@ -235,6 +239,7 @@ export default function SettingsPage() {
                         size="icon"
                         variant="outline"
                         onClick={() => { navigator.clipboard.writeText(newToken); toast.success('Copied!'); }}
+                        aria-label="Copy API key"
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
@@ -244,8 +249,9 @@ export default function SettingsPage() {
                 ) : (
                   <div className="space-y-3">
                     <div className="space-y-2">
-                      <Label>Key Name</Label>
+                      <Label htmlFor="api-key-name">Key Name</Label>
                       <Input
+                        id="api-key-name"
                         placeholder="e.g. Claude Desktop MCP"
                         value={apiKeyName}
                         onChange={(e) => setApiKeyName(e.target.value)}
@@ -291,7 +297,14 @@ export default function SettingsPage() {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive"
-                        onClick={() => deleteApiKey.mutate(k.id)}
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: `Delete API key "${k.name}"?`,
+                            description: 'Any tool using this key (like Claude Desktop MCP) will stop working immediately.',
+                          });
+                          if (ok) deleteApiKey.mutate(k.id);
+                        }}
+                        aria-label={`Delete API key ${k.name}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

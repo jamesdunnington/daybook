@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { format, formatDistanceToNow } from 'date-fns';
 import { Plus, Trash2, FileText, Target, Pencil, Check, X } from 'lucide-react';
 import { undoableDelete } from '@/lib/power-tab/undo-toast';
+import { useConfirm } from '@/components/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -489,6 +490,7 @@ function PagesTab({ projectId }: { projectId: string }) {
     onError: () => toast.error('Failed to rename page'),
   });
 
+  const confirm = useConfirm();
   const deletePageMutation = useMutation({
     mutationFn: (pageId: string) =>
       fetch(`/api/power-tab/pages/${pageId}`, { method: 'DELETE' }).then((r) => {
@@ -506,13 +508,14 @@ function PagesTab({ projectId }: { projectId: string }) {
   const rootPages = useMemo(() => pages.filter((p) => !p.parentId), [pages]);
   const childrenOf = (parentId: string) => pages.filter((p) => p.parentId === parentId);
 
-  function handleDeletePage(p: PageSummary) {
+  async function handleDeletePage(p: PageSummary) {
     const childCount = childrenOf(p.id).length;
     if (childCount > 0) {
-      const ok = window.confirm(
-        `"${p.title}" has ${childCount} sub-page${childCount === 1 ? '' : 's'} that will be deleted too and ` +
-          `can't be recovered by Undo. Delete anyway?`
-      );
+      const ok = await confirm({
+        title: `Delete "${p.title}"?`,
+        description: `It has ${childCount} sub-page${childCount === 1 ? '' : 's'} that will be deleted too, and Undo can't bring them back.`,
+        confirmLabel: 'Delete all',
+      });
       if (!ok) return;
     }
     deletePageMutation.mutate(p.id);

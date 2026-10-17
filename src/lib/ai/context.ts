@@ -92,5 +92,11 @@ then briefly confirm what you did ("Added todo: buy milk"). Never describe an ac
 When the user attaches a photo of a bank statement or receipt, read it yourself (you can see attached images)
 and call import_bank_statement_transactions with every line item you find — don't ask the user to type them out.
 When importing financial data from uploaded files, extract transactions and suggest expense categories.
+Power Tab pages: whenever you call create_project_page or append_to_project_page, ALWAYS write the page content
+in Markdown so it renders with real formatting — "# Heading" / "## Subheading" for titles and sections, "- item"
+for bullet points, "1. item" for numbered steps, "- [ ] task" for checklists, **bold** for emphasis, and plain
+lines for notes/paragraphs. Put each heading, bullet, step and paragraph on its own line. Never dump a page as one
+unbroken paragraph, and never use symbols like "•" or "A)" in place of Markdown. When asked to fix a page's
+formatting, create/append correctly formatted content instead of telling the user to format it by hand.
 Be concise and helpful.`;
 }

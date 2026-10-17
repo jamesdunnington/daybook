@@ -193,7 +193,7 @@ export default function PowerTabPage() {
                 </Card>
               </Link>
 
-              <div className="absolute right-3 top-3 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="absolute right-3 top-3 flex gap-0.5 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-within:opacity-100">
                 <ProjectDialog
                   project={project}
                   trigger={

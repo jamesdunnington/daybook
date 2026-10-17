@@ -268,7 +268,7 @@ function AddTodoDialog({ categories }: { categories: TodoCategory[] }) {
             <div className="space-y-2">
               <Label>Priority</Label>
               <Select value={priority} onValueChange={(v) => setPriority(v ?? 'medium')}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Priority">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -283,7 +283,7 @@ function AddTodoDialog({ categories }: { categories: TodoCategory[] }) {
             <div className="space-y-2">
               <Label>Category</Label>
               <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? '')}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Category">
                   <SelectValue placeholder="None">
                     {(v: string | null) => !v || v === 'none' ? 'None' : categories.find(c => c.id === v)?.name ?? 'None'}
                   </SelectValue>
@@ -430,7 +430,7 @@ function EditTodoDialog({ todo, categories }: { todo: Todo; categories: TodoCate
             <div className="space-y-2">
               <Label>Priority</Label>
               <Select value={priority} onValueChange={(v) => setPriority(v ?? 'medium')}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Priority">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -445,7 +445,7 @@ function EditTodoDialog({ todo, categories }: { todo: Todo; categories: TodoCate
             <div className="space-y-2">
               <Label>Category</Label>
               <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? 'none')}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Category">
                   <SelectValue placeholder="None">
                     {(v: string | null) => !v || v === 'none' ? 'None' : categories.find(c => c.id === v)?.name ?? 'None'}
                   </SelectValue>

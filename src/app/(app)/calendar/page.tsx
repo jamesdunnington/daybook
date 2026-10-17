@@ -16,6 +16,7 @@ import {
   addMonths,
   subMonths,
 } from 'date-fns';
+import { useConfirm } from '@/components/confirm-dialog';
 import { ChevronLeft, ChevronRight, Plus, Trash2, Clock, MapPin, Pencil, Search } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -287,6 +288,7 @@ function EventDetailDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -521,7 +523,15 @@ function EventDetailDialog({
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => deleteMutation.mutate(event.id)}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: `Delete "${event.title}"?`,
+                    description: event.rrule
+                      ? 'This is a recurring event, so every occurrence will be removed.'
+                      : 'It will be removed from your calendar.',
+                  });
+                  if (ok) deleteMutation.mutate(event.id);
+                }}
                 disabled={deleteMutation.isPending}
               >
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -753,7 +763,7 @@ export default function CalendarPage() {
           </label>
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto">
-          <Button variant="outline" size="icon" onClick={handlePrevMonth} disabled={isSearching}>
+          <Button variant="outline" size="icon" onClick={handlePrevMonth} disabled={isSearching} aria-label="Previous month">
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <Button
@@ -764,7 +774,7 @@ export default function CalendarPage() {
           >
             Today
           </Button>
-          <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isSearching}>
+          <Button variant="outline" size="icon" onClick={handleNextMonth} disabled={isSearching} aria-label="Next month">
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button

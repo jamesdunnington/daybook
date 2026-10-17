@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useConfirm } from '@/components/confirm-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, Shield, ShieldOff, Trash2, UserCheck, UserX } from 'lucide-react';
@@ -23,6 +24,7 @@ interface User {
 
 export default function AdminUsersPage() {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ['admin', 'users'],
@@ -105,7 +107,7 @@ export default function AdminUsersPage() {
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${u.name}`} />}>
                         <MoreHorizontal className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -129,10 +131,13 @@ export default function AdminUsersPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
-                          onClick={() => {
-                            if (confirm(`Delete ${u.name}? This cannot be undone.`)) {
-                              deleteUser.mutate(u.id);
-                            }
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: `Delete ${u.name}?`,
+                              description: `${u.email} will lose access and all of their data will be removed. This can't be undone.`,
+                              confirmLabel: 'Delete user',
+                            });
+                            if (ok) deleteUser.mutate(u.id);
                           }}
                         >
                           <Trash2 className="mr-2 h-4 w-4" /> Delete User

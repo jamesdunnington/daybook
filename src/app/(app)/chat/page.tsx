@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Send, Paperclip, Plus, Trash2, MessageSquare, Bot, User, ChevronLeft, X, RotateCcw, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/confirm-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
@@ -126,7 +127,7 @@ function Sidebar({ conversations, selectedId, onSelect, onNew, onDelete }: Sideb
           <MessageSquare className="size-4" />
           Chats
         </span>
-        <Button size="icon-sm" variant="ghost" onClick={onNew} title="New chat">
+        <Button size="icon-sm" variant="ghost" onClick={onNew} title="New chat" aria-label="New chat">
           <Plus />
         </Button>
       </div>
@@ -417,7 +418,13 @@ export default function ChatPage() {
     }
   }, [queryClient]);
 
+  const confirm = useConfirm();
   const handleDelete = useCallback(async (id: string) => {
+    const ok = await confirm({
+      title: 'Delete this conversation?',
+      description: "All of its messages will be removed. This can't be undone.",
+    });
+    if (!ok) return;
     try {
       await deleteConversation(id);
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -429,7 +436,7 @@ export default function ChatPage() {
     } catch {
       toast.error('Failed to delete conversation');
     }
-  }, [queryClient, selectedConvId]);
+  }, [confirm, queryClient, selectedConvId]);
 
   const handleSend = useCallback(async () => {
     const content = input.trim();
@@ -709,7 +716,7 @@ export default function ChatPage() {
             <MessageSquare className="size-4" />
             Chats
           </span>
-          <Button size="icon-sm" variant="ghost" onClick={handleNewChat} title="New chat">
+          <Button size="icon-sm" variant="ghost" onClick={handleNewChat} title="New chat" aria-label="New chat">
             <Plus />
           </Button>
         </div>
@@ -785,6 +792,7 @@ export default function ChatPage() {
                 size="icon-sm"
                 variant="ghost"
                 onClick={() => setSelectedConvId(null)}
+                aria-label="Back to chats"
               >
                 <ChevronLeft />
               </Button>

@@ -689,14 +689,54 @@ function blocksToText(blocks: unknown): string {
   return lines.join('\n');
 }
 
-function newParagraphBlock(text: string) {
+// Splits a line into BlockNote inline runs, honouring **bold** and `code`.
+function inlineRuns(text: string) {
+  const runs: { type: 'text'; text: string; styles: Record<string, boolean> }[] = [];
+  const re = /\*\*(.+?)\*\*|`([^`]+)`/g;
+  let last = 0;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    if (m.index > last) runs.push({ type: 'text', text: text.slice(last, m.index), styles: {} });
+    runs.push(m[1] !== undefined
+      ? { type: 'text', text: m[1], styles: { bold: true } }
+      : { type: 'text', text: m[2], styles: { code: true } });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) runs.push({ type: 'text', text: text.slice(last), styles: {} });
+  return runs;
+}
+
+function makeBlock(type: string, text: string, extraProps: Record<string, unknown> = {}) {
   return {
     id: randomUUID(),
-    type: 'paragraph',
-    props: { textColor: 'default', backgroundColor: 'default', textAlignment: 'left' },
-    content: [{ type: 'text', text, styles: {} }],
+    type,
+    props: { textColor: 'default', backgroundColor: 'default', textAlignment: 'left', ...extraProps },
+    content: inlineRuns(text),
     children: [],
   };
+}
+
+// Converts markdown-ish text (headings, bullets, numbered lists, checklists,
+// paragraphs) into real BlockNote blocks so pages render formatted in the editor
+// instead of showing raw `#` / `-` / `1.` symbols in one paragraph.
+function textToBlocks(text: string) {
+  const blocks: ReturnType<typeof makeBlock>[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    let m: RegExpMatchArray | null;
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+      blocks.push(makeBlock('heading', m[2], { level: Math.min(m[1].length, 3) }));
+    } else if ((m = line.match(/^[-*+]\s+\[( |x|X)\]\s+(.*)$/))) {
+      blocks.push(makeBlock('checkListItem', m[2], { checked: m[1] !== ' ' }));
+    } else if ((m = line.match(/^[-*+•]\s+(.*)$/))) {
+      blocks.push(makeBlock('bulletListItem', m[1]));
+    } else if ((m = line.match(/^\d+[.)]\s+(.*)$/))) {
+      blocks.push(makeBlock('numberedListItem', m[1]));
+    } else {
+      blocks.push(makeBlock('paragraph', line));
+    }
+  }
+  return blocks;
 }
 
 define(
@@ -821,7 +861,11 @@ define(
       projectId: { type: 'string' },
       title: { type: 'string' },
       parentId: { type: 'string', description: 'Optional parent page ID to nest under' },
-      initialText: { type: 'string', description: 'Optional first paragraph of text' },
+      initialText: {
+        type: 'string',
+        description:
+          'Optional page body. Markdown is converted to real formatting: "# Heading" (1-3 #), "- item" bullets, "1. item" numbered lists, "- [ ] task" checklists, **bold**, `code`. One block per line; blank lines are skipped.',
+      },
     },
     required: ['projectId', 'title'],
   },
@@ -829,7 +873,7 @@ define(
     const body = {
       title: args.title,
       parentId: args.parentId ?? null,
-      content: args.initialText ? [newParagraphBlock(String(args.initialText))] : [],
+      content: args.initialText ? textToBlocks(String(args.initialText)) : [],
     };
     const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${args.projectId}/pages`, {
       method: 'POST',
@@ -841,13 +885,13 @@ define(
 
 define(
   'append_to_project_page',
-  'Append a paragraph of text to an existing project page.',
+  'Append content to an existing project page. Markdown is converted to real formatting: "# Heading" (1-3 #), "- item" bullets, "1. item" numbered lists, "- [ ] task" checklists, **bold**, `code`. One block per line.',
   { properties: { pageId: { type: 'string' }, text: { type: 'string' } }, required: ['pageId', 'text'] },
   async (args, ctx) => {
     const page = (await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/pages/${args.pageId}`)) as {
       content: unknown[];
     };
-    const content = [...(Array.isArray(page.content) ? page.content : []), newParagraphBlock(String(args.text))];
+    const content = [...(Array.isArray(page.content) ? page.content : []), ...textToBlocks(String(args.text))];
     const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/pages/${args.pageId}`, {
       method: 'PATCH',
       body: JSON.stringify({ content }),
