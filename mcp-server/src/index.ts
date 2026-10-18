@@ -1117,7 +1117,8 @@ server.tool(
 server.tool(
   'log_project_activity',
   'Add a dated activity-log entry to a project — use this whenever the user mentions doing work on a project ' +
-  '(e.g. "expanded article X", "ran an audit"). Optionally link it to a milestone with a count so progress tracks it.',
+  '(e.g. "expanded article X", "ran an audit"). With a milestoneId it completes that milestone\'s next empty target ' +
+  '(named after the work done); to tick an already-named target use update_milestone_target instead.',
   {
     projectId: z.string().describe('The project ID'),
     content: z.string().describe('What was done'),
@@ -1148,18 +1149,86 @@ server.tool(
 // ---------------------------------------------------------------------------
 server.tool(
   'create_milestone',
-  'Create a milestone for a project — a target count (e.g. 50 articles) with an optional due date. Progress and ' +
-  'a pace-based forecast are computed automatically from linked activity-log entries.',
+  'Create a milestone for a project — a target count (e.g. 50 articles) and a required completion date. One empty ' +
+  'target per count appears in the Activity Log to be named and ticked off; progress and a pace-based forecast follow ' +
+  'the ticks. Pass "items" to name the first targets (optional).',
   {
     projectId: z.string().describe('The project ID'),
     title: z.string().describe('Milestone title'),
     unitLabel: z.string().optional().describe("Unit label, e.g. 'articles'"),
     targetCount: z.number().describe('Target count to reach'),
-    targetDate: z.string().optional().describe('Optional due date (YYYY-MM-DD)'),
+    targetDate: z.string().describe('Required completion date (YYYY-MM-DD)'),
+    items: z.array(z.string()).optional().describe('Optional names for the first targets'),
   },
   async ({ projectId, ...body }) => runTool(() =>
     daybookFetch(`/api/power-tab/projects/${projectId}/milestones`, {
       method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: add_milestone_target
+// ---------------------------------------------------------------------------
+server.tool(
+  'add_milestone_target',
+  'Add one more target to a milestone (raises its target count by 1). Name and target date are optional; a target ' +
+  "with no date follows the milestone's completion date.",
+  {
+    projectId: z.string().describe('The project ID'),
+    milestoneId: z.string().describe('The milestone ID'),
+    name: z.string().optional().describe('Optional name for the target'),
+    targetDate: z.string().optional().describe('Optional target date (YYYY-MM-DD)'),
+  },
+  async ({ projectId, milestoneId, name, targetDate }) => runTool(() =>
+    daybookFetch(`/api/power-tab/projects/${projectId}/log`, {
+      method: 'POST',
+      body: JSON.stringify({ planned: true, milestoneId, content: name ?? '', ...(targetDate ? { targetDate } : {}) }),
+    }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: update_milestone_target
+// ---------------------------------------------------------------------------
+server.tool(
+  'update_milestone_target',
+  'Tick or untick a milestone target, rename it, or change its own target date (empty string = follow the ' +
+  "milestone). Ticking updates the milestone's progress. Get target IDs from list_project_activity.",
+  {
+    projectId: z.string().describe('The project ID'),
+    targetId: z.string().describe('The activity-log row id of the target'),
+    completed: z.boolean().optional(),
+    content: z.string().optional().describe('New name'),
+    targetDate: z.string().optional().describe('YYYY-MM-DD, or empty string to follow the milestone date'),
+  },
+  async ({ projectId, targetId, targetDate, ...rest }) => runTool(() =>
+    daybookFetch(`/api/power-tab/projects/${projectId}/log/${targetId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...rest, ...(targetDate !== undefined ? { targetDate: targetDate || null } : {}) }),
+    }),
+  ),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: update_milestone
+// ---------------------------------------------------------------------------
+server.tool(
+  'update_milestone',
+  'Change a milestone: title, completion date (cannot be cleared), target count (adds or removes empty targets), ' +
+  'or status — "abandoned" greys it out at the end of the list and stops it counting; "active" restores it.',
+  {
+    projectId: z.string().describe('The project ID'),
+    milestoneId: z.string().describe('The milestone ID'),
+    title: z.string().optional(),
+    targetDate: z.string().optional().describe('YYYY-MM-DD'),
+    targetCount: z.number().optional(),
+    status: z.enum(['active', 'abandoned']).optional(),
+  },
+  async ({ projectId, milestoneId, ...body }) => runTool(() =>
+    daybookFetch(`/api/power-tab/projects/${projectId}/milestones/${milestoneId}`, {
+      method: 'PATCH',
       body: JSON.stringify(body),
     }),
   ),

@@ -415,6 +415,10 @@ export const projectActivityLog = pgTable(
     countValue: numeric('count_value', { precision: 12, scale: 2 }).notNull().default('1'),
     entryDate: timestamp('entry_date').notNull().defaultNow(),
     content: text('content').notNull(),
+    // Planned target for a milestone: null = open (falls back to the milestone's date).
+    targetDate: timestamp('target_date'),
+    // Null while the item is still planned; set (and counted toward the milestone) once ticked.
+    completedAt: timestamp('completed_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (t) => [

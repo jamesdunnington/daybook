@@ -853,7 +853,8 @@ define(
 define(
   'log_project_activity',
   'Add a dated activity-log entry to a project — use this whenever the user mentions doing work on a project ' +
-  '(e.g. "expanded article X", "ran an audit"). Optionally link it to a milestone with a count so progress tracks it.',
+  '(e.g. "expanded article X", "ran an audit"). With a milestoneId it completes that milestone\'s next empty target ' +
+  '(named after the work done); to tick an already-named target use update_milestone_target instead.',
   {
     properties: {
       projectId: { type: 'string' },
@@ -887,17 +888,19 @@ define(
 
 define(
   'create_milestone',
-  'Create a milestone for a project — a target count (e.g. 50 articles) with an optional due date. Progress and ' +
-  'a pace-based forecast are computed automatically from linked activity-log entries.',
+  'Create a milestone for a project — a target count (e.g. 50 articles) and a required completion date. One empty ' +
+  'target per count appears in the Activity Log to be named and ticked off; progress and a pace-based forecast follow ' +
+  'the ticks. Pass "items" to name the first targets (optional).',
   {
     properties: {
       projectId: { type: 'string' },
       title: { type: 'string' },
       unitLabel: { type: 'string', description: "e.g. 'articles'" },
       targetCount: { type: 'number' },
-      targetDate: { type: 'string', description: 'Optional YYYY-MM-DD' },
+      targetDate: { type: 'string', description: 'Required completion date, YYYY-MM-DD' },
+      items: { type: 'array', items: { type: 'string' }, description: 'Optional names for the first targets' },
     },
-    required: ['projectId', 'title', 'targetCount'],
+    required: ['projectId', 'title', 'targetCount', 'targetDate'],
   },
   async (args, ctx) => {
     const { projectId: projectRef, ...body } = args;
@@ -907,6 +910,91 @@ define(
       body: JSON.stringify(body),
     });
     return { output, summary: `Created milestone "${args.title}"` };
+  }
+);
+
+define(
+  'add_milestone_target',
+  'Add one more target to a milestone (raises its target count by 1). Name and target date are optional; a target ' +
+  'with no date follows the milestone\'s completion date.',
+  {
+    properties: {
+      projectId: { type: 'string' },
+      milestoneId: { type: 'string' },
+      name: { type: 'string', description: 'Optional name for the target' },
+      targetDate: { type: 'string', description: 'Optional YYYY-MM-DD' },
+    },
+    required: ['projectId', 'milestoneId'],
+  },
+  async (args, ctx) => {
+    const projectId = await resolveProjectId(args.projectId, ctx);
+    const output = await internalFetch(ctx.origin, ctx.cookieHeader, `/api/power-tab/projects/${projectId}/log`, {
+      method: 'POST',
+      body: JSON.stringify({
+        planned: true,
+        milestoneId: args.milestoneId,
+        content: args.name ?? '',
+        ...(args.targetDate ? { targetDate: args.targetDate } : {}),
+      }),
+    });
+    return { output, summary: 'Added a milestone target' };
+  }
+);
+
+define(
+  'update_milestone_target',
+  'Tick or untick a milestone target, rename it, or change its own target date (null = follow the milestone). ' +
+  'Ticking updates the milestone\'s progress. Get target IDs from list_project_activity.',
+  {
+    properties: {
+      projectId: { type: 'string' },
+      targetId: { type: 'string', description: 'The activity-log row id of the target' },
+      completed: { type: 'boolean' },
+      content: { type: 'string', description: 'New name' },
+      targetDate: { type: 'string', description: 'YYYY-MM-DD, or empty string to follow the milestone date' },
+    },
+    required: ['projectId', 'targetId'],
+  },
+  async (args, ctx) => {
+    const projectId = await resolveProjectId(args.projectId, ctx);
+    const { targetId, targetDate, completed, content } = args;
+    const body: Record<string, unknown> = { completed, content };
+    if (targetDate !== undefined) body.targetDate = targetDate || null;
+    const output = await internalFetch(
+      ctx.origin,
+      ctx.cookieHeader,
+      `/api/power-tab/projects/${projectId}/log/${targetId}`,
+      { method: 'PATCH', body: JSON.stringify(body) }
+    );
+    return { output, summary: 'Updated a milestone target' };
+  }
+);
+
+define(
+  'update_milestone',
+  'Change a milestone: title, completion date (cannot be cleared), target count (adds or removes empty targets), ' +
+  'or status — "abandoned" greys it out at the end of the list and stops it counting; "active" restores it.',
+  {
+    properties: {
+      projectId: { type: 'string' },
+      milestoneId: { type: 'string' },
+      title: { type: 'string' },
+      targetDate: { type: 'string', description: 'YYYY-MM-DD' },
+      targetCount: { type: 'number' },
+      status: { type: 'string', enum: ['active', 'abandoned'] },
+    },
+    required: ['projectId', 'milestoneId'],
+  },
+  async (args, ctx) => {
+    const projectId = await resolveProjectId(args.projectId, ctx);
+    const { milestoneId, title, targetDate, targetCount, status } = args;
+    const output = await internalFetch(
+      ctx.origin,
+      ctx.cookieHeader,
+      `/api/power-tab/projects/${projectId}/milestones/${milestoneId}`,
+      { method: 'PATCH', body: JSON.stringify({ title, targetDate, targetCount, status }) }
+    );
+    return { output, summary: 'Updated milestone' };
   }
 );
 

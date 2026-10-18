@@ -5,6 +5,7 @@ import { projects, projectMilestones, projectActivityLog } from '@/lib/db/schema
 import { requireSession } from '@/lib/auth/server';
 import { validateApiKey } from '@/lib/auth/api-key';
 import { computeMilestoneForecast } from '@/lib/power-tab/forecast';
+import { MAX_MILESTONE_ITEMS, startOfToday, syncProjectStatus } from '@/lib/power-tab/items';
 import { eq, and } from 'drizzle-orm';
 
 async function getUserId() {
@@ -33,23 +34,60 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .from(projectMilestones)
     .where(eq(projectMilestones.projectId, id));
 
-  const withForecast = await Promise.all(
-    milestones.map(async (m) => {
-      const entries = await db
-        .select({ countValue: projectActivityLog.countValue, entryDate: projectActivityLog.entryDate })
-        .from(projectActivityLog)
-        .where(eq(projectActivityLog.milestoneId, m.id));
-
-      const progressSoFar = entries.reduce((sum, e) => sum + parseFloat(e.countValue), 0);
-      const forecast = computeMilestoneForecast({
-        targetCount: parseFloat(m.targetCount),
-        progressSoFar,
-        entries: entries.map((e) => ({ countValue: parseFloat(e.countValue), entryDate: e.entryDate })),
-      });
-
-      return { ...m, forecast };
+  const items = await db
+    .select({
+      milestoneId: projectActivityLog.milestoneId,
+      content: projectActivityLog.content,
+      countValue: projectActivityLog.countValue,
+      targetDate: projectActivityLog.targetDate,
+      completedAt: projectActivityLog.completedAt,
     })
-  );
+    .from(projectActivityLog)
+    .where(eq(projectActivityLog.projectId, id));
+
+  const today = startOfToday();
+
+  // Self-heals the project status after paths that skip the handlers (e.g. undoing a delete).
+  await syncProjectStatus(id);
+
+  const withForecast = milestones.map((m) => {
+    const mine = items.filter((e) => e.milestoneId === m.id);
+    const done = mine.filter((e) => e.completedAt);
+    const open = mine.filter((e) => !e.completedAt);
+
+    const progressSoFar = done.reduce((sum, e) => sum + parseFloat(e.countValue), 0);
+    const forecast = computeMilestoneForecast({
+      targetCount: parseFloat(m.targetCount),
+      progressSoFar,
+      entries: done.map((e) => ({ countValue: parseFloat(e.countValue), entryDate: e.completedAt! })),
+    });
+
+    // An open item with no date of its own is due when the milestone is.
+    const overdue =
+      m.status === 'abandoned'
+        ? 0
+        : open.filter((e) => {
+            const due = e.targetDate ?? m.targetDate;
+            return !!due && due < today;
+          }).length;
+
+    return {
+      ...m,
+      forecast,
+      itemCounts: {
+        done: done.length,
+        open: open.length,
+        named: open.filter((e) => e.content.trim()).length,
+        overdue,
+      },
+    };
+  });
+
+  // Abandoned milestones sink to the end; otherwise keep creation order.
+  withForecast.sort((a, b) => {
+    const abandoned = Number(a.status === 'abandoned') - Number(b.status === 'abandoned');
+    return abandoned || a.createdAt.getTime() - b.createdAt.getTime();
+  });
 
   return NextResponse.json(withForecast);
 }
@@ -64,6 +102,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!body.title || !body.targetCount) {
     return NextResponse.json({ error: 'title and targetCount are required' }, { status: 400 });
   }
+  if (!body.targetDate || Number.isNaN(new Date(body.targetDate).getTime())) {
+    return NextResponse.json({ error: 'targetDate is required' }, { status: 400 });
+  }
+
+  // Optional names for the first targets; a blank box still counts as one target.
+  const names: string[] = Array.isArray(body.items)
+    ? body.items.map((n: unknown) => (typeof n === 'string' ? n.trim() : ''))
+    : [];
+  const count = Math.max(Math.floor(Number(body.targetCount)), names.length);
+  if (!Number.isFinite(count) || count < 1 || count > MAX_MILESTONE_ITEMS) {
+    return NextResponse.json(
+      { error: `targetCount must be between 1 and ${MAX_MILESTONE_ITEMS}` },
+      { status: 400 }
+    );
+  }
 
   const [milestone] = await db
     .insert(projectMilestones)
@@ -72,10 +125,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       userId,
       title: body.title,
       unitLabel: body.unitLabel ?? 'items',
-      targetCount: String(body.targetCount),
-      targetDate: body.targetDate ? new Date(body.targetDate) : null,
+      targetCount: String(count),
+      targetDate: new Date(body.targetDate),
     })
     .returning();
+
+  // One slot per target. createdAt is staggered so the list keeps the order they were typed in.
+  const base = Date.now();
+  await db.insert(projectActivityLog).values(
+    Array.from({ length: count }, (_, i) => ({
+      projectId: id,
+      userId,
+      milestoneId: milestone.id,
+      content: names[i] ?? '',
+      createdAt: new Date(base + i),
+    }))
+  );
+
+  // A new milestone starts at 0%, so a completed project goes back to active.
+  await syncProjectStatus(id);
 
   return NextResponse.json(milestone, { status: 201 });
 }

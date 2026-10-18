@@ -156,19 +156,26 @@ export async function getProjectAttention(
     .from(projectMilestones)
     .where(and(eq(projectMilestones.userId, userId), eq(projectMilestones.status, 'active')));
 
+  // Only ticked items count as progress; planned (open) items are not activity yet.
   const milestoneEntries = await db
     .select({
       milestoneId: projectActivityLog.milestoneId,
       countValue: projectActivityLog.countValue,
-      entryDate: projectActivityLog.entryDate,
+      completedAt: projectActivityLog.completedAt,
     })
     .from(projectActivityLog)
-    .where(and(eq(projectActivityLog.userId, userId), isNotNull(projectActivityLog.milestoneId)));
+    .where(
+      and(
+        eq(projectActivityLog.userId, userId),
+        isNotNull(projectActivityLog.milestoneId),
+        isNotNull(projectActivityLog.completedAt)
+      )
+    );
 
   const lastActivityRows = await db
-    .select({ projectId: projectActivityLog.projectId, last: max(projectActivityLog.entryDate) })
+    .select({ projectId: projectActivityLog.projectId, last: max(projectActivityLog.completedAt) })
     .from(projectActivityLog)
-    .where(eq(projectActivityLog.userId, userId))
+    .where(and(eq(projectActivityLog.userId, userId), isNotNull(projectActivityLog.completedAt)))
     .groupBy(projectActivityLog.projectId);
 
   const lastActivityByProject = new Map<string, Date>();
@@ -185,7 +192,7 @@ export async function getProjectAttention(
       targetDate: m.targetDate,
       entries: milestoneEntries
         .filter((e) => e.milestoneId === m.id)
-        .map((e) => ({ countValue: parseFloat(e.countValue), entryDate: e.entryDate })),
+        .map((e) => ({ countValue: parseFloat(e.countValue), entryDate: e.completedAt! })),
     }));
 
   return {
