@@ -1,0 +1,10 @@
+{
+  "mcp": {
+    "servers": {
+      "daybook": {
+        "type": "remote",
+        "url": "https://mcpdaybook.thecontentwarrior.work/mcp"
+      }
+    }
+  }
+}

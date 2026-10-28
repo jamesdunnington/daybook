@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { mcpAuthRouter, mcpAuthMetadataRouter, createOAuthMetadata } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
@@ -1359,6 +1360,27 @@ app.use(express.json({ limit: '15mb' }));
 // OAuth discovery + token + registration endpoints
 app.use(mcpAuthRouter({ provider: authProvider, issuerUrl, scopesSupported: [] }));
 
+// RFC 9728 says protected-resource metadata lives at the resource's own path.
+// The auth router above only serves the bare `/.well-known/oauth-protected-
+// resource` URL (its handler matches the exact mount path, not sub-paths), so
+// clients that look up `.../oauth-protected-resource/mcp` or `.../sse` would
+// get a 404. Serve metadata for each resource path explicitly.
+const oauthMetadata = createOAuthMetadata({ provider: authProvider, issuerUrl, scopesSupported: [] });
+app.use(
+  mcpAuthMetadataRouter({
+    oauthMetadata,
+    resourceServerUrl: new URL(`${MCP_SERVER_URL}/mcp`),
+    scopesSupported: [],
+  }),
+);
+app.use(
+  mcpAuthMetadataRouter({
+    oauthMetadata,
+    resourceServerUrl: new URL(`${MCP_SERVER_URL}/sse`),
+    scopesSupported: [],
+  }),
+);
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'daybook-mcp' });
@@ -1390,8 +1412,48 @@ app.post('/messages', requireBearerAuth({ verifier: authProvider, resourceMetada
   dlog(`[/messages] handlePostMessage returned after ${Date.now() - tReceived}ms`);
 });
 
+// ---------------------------------------------------------------------------
+// Streamable HTTP endpoint (MCP 2025-03-26+) — the transport modern clients
+// (e.g. OpenCode V2, Claude, Cursor) use. Stateless: a fresh server handles
+// each request, so no session map is needed and it works behind a proxy.
+// The legacy SSE endpoints above are kept for older clients.
+// ---------------------------------------------------------------------------
+const mcpResourceMetadataUrl = `${MCP_SERVER_URL}/.well-known/oauth-protected-resource/mcp`;
+
+app.post('/mcp', requireBearerAuth({ verifier: authProvider, resourceMetadataUrl: mcpResourceMetadataUrl }), async (req, res) => {
+  const server = buildServer();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  res.on('close', () => {
+    transport.close();
+    server.close();
+  });
+  try {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    console.error('Error handling MCP /mcp request:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        error: { code: -32603, message: 'Internal server error' },
+        id: null,
+      });
+    }
+  }
+});
+
+// The spec allows a GET for an optional server->client stream and DELETE to end
+// a session; this stateless endpoint does not support either.
+app.get('/mcp', (_req, res) => {
+  res.status(405).json({ error: 'Method Not Allowed — use POST /mcp' });
+});
+
 app.listen(PORT, () => {
   console.log(`Daybook MCP server listening on http://0.0.0.0:${PORT}`);
+  console.log(`  Streamable HTTP: ${MCP_SERVER_URL}/mcp`);
   console.log(`  SSE endpoint  : ${MCP_SERVER_URL}/sse`);
   console.log(`  Messages      : ${MCP_SERVER_URL}/messages`);
   console.log(`  Health check  : ${MCP_SERVER_URL}/health`);
