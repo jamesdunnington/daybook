@@ -43,8 +43,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/daybook:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/daybook:buildcache,mode=max
 
   build-mcp:
     name: Build & push MCP server image
@@ -79,5 +79,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/daybook-mcp:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/daybook-mcp:buildcache,mode=max
